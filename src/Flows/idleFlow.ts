@@ -2,7 +2,7 @@ import { addKeyword, EVENTS } from '@builderbot/bot';
 import { toAsk } from '@builderbot-plugins/openai-assistants';
 import { ResumenData } from '~/utils/googleSheetsResumen';
 import { extraerDatosResumen } from '~/utils/extractJsonData';
-import { addToSheet } from '~/utils/googleSheetsResumen';
+//import { addToSheet } from '~/utils/googleSheetsResumen';
 import fs from 'fs';
 import path from 'path';// Import the new logic
 import { ReconectionFlow } from './reconectionFlow';
@@ -66,7 +66,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                                 console.error(`❌ TEST: No se pudo enviar el resumen al grupo ${ID_GRUPO_RESUMEN}:`, err?.message || err);
                             }
                             console.log('📝 Datos a guardar en Google Sheets:', newData);
-                            await addToSheet(newData);
+                            //await addToSheet(newData);
                             // Aquí podrías invocar el siguiente flujo con el asistente adecuado si lo deseas
                             return;
                         },
@@ -82,7 +82,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                             }
                             // Guardar en Google Sheets aunque no se envíe el resumen
                             console.log('📝 Datos a guardar en Google Sheets (sin respuesta):', data);
-                            await addToSheet(data);
+                            //await addToSheet(data);
                             return;
                         }
                     });
@@ -109,7 +109,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
 
                 // Guardar en Google Sheets
                 console.log('📝 Datos a guardar en Google Sheets:', data);
-                await addToSheet(data);
+                //await addToSheet(data);
             } else {
                 // Si no hay resumen o falta el ID del grupo, mostrar advertencia
                 console.warn("No se pudo obtener el resumen o falta ID_GRUPO_RESUMEN.");
