@@ -24,7 +24,6 @@ export class ReconectionFlow {
     private readonly provider: any; // Proveedor de mensajería
     private readonly onSuccess: (data: ResumenData) => Promise<void>; // Acción al obtener nombre
     private readonly onFail: () => Promise<void>; // Acción al fallar todos los intentos
-    private readonly ASSISTANT_ID = process.env.ASSISTANT_ID ?? '';
 
     constructor(options: ReconectionOptions) {
         this.ctx = options.ctx;
@@ -38,6 +37,8 @@ export class ReconectionFlow {
 
     // Inicia el ciclo de reconexión
     async start() {
+        // Importar lógica multiagente
+        const { analizarDestinoRecepcionista, ASSISTANT_MAP } = require("../app");
         // Intentar restaurar el estado previo si existe
         if (this.state && this.state.reconectionFlow) {
             this.restoreState(this.state.reconectionFlow);
@@ -49,26 +50,34 @@ export class ReconectionFlow {
             ? originalFrom
             : `${originalFrom}@s.whatsapp.net`;
         console.log(`[ReconectionFlow] originalCtx.from:`, originalFrom, '| jid usado:', jid);
+
+        // Mensajes y timeouts desde variables de entorno
+        const msjSeguimiento1 = process.env.msjSeguimiento1 || '';
+        const msjSeguimiento2 = process.env.msjSeguimiento2 || '';
+        const msjSeguimiento3 = process.env.msjSeguimiento3 || '';
+        const timeOutSeguimiento2 = Number(process.env.timeOutSeguimiento2) * 60 * 1000;
+        const timeOutSeguimiento3 = Number(process.env.timeOutSeguimiento3) * 60 * 1000;
+
         while (this.attempts < this.maxAttempts) {
             this.attempts++;
             // Guardar el estado actual de reconexión en el state global
             if (this.state) {
                 this.state.reconectionFlow = this.getState();
             }
-            let msg: string;
-            let timeout: number;
+            let msg = '';
+            let timeout = this.timeoutMs;
             switch (this.attempts) {
                 case 1:
-                    msg = 'La Inteligencia Artificial ayuda a los empresarios a ahorrar costos y optimizar ventas.\n(Este es un mensaje de seguimiento 😉)';
-                    timeout = 2700000; // 45 min para el siguiente msj
+                    msg = msjSeguimiento1;
+                    timeout = timeOutSeguimiento2;
                     break;
                 case 2:
-                    msg = 'Más del 34% de los leads se pierden por falta de seguimiento del vendedor, yo como IA de ventas te doy seguimiento, \nSigo aquí para ayudarte a optimizar ventas';
-                    timeout = 7200000; // 120 minutos para el siguiente msj
+                    msg = msjSeguimiento2;
+                    timeout = timeOutSeguimiento3;
                     break;
                 case 3:
                 default:
-                    msg = 'El 90% de los vendedores humanos sólo envían 2 mensajes de seguimiento.\n\nAquí estoy para potenciar tus ventas, hablemos que puedo hacer por tu negocio.';
+                    msg = msjSeguimiento3
                     timeout = 60000; // 1 minuto para el siguiente msj
                     break;
             }
@@ -90,14 +99,17 @@ export class ReconectionFlow {
             if (userResponded) {
                 // Limpiar el estado de reconexión al éxito
                 if (this.state) delete this.state.reconectionFlow;
-                const resumen = await toAsk(this.ASSISTANT_ID, "GET_RESUMEN", this.state);
+                // Determinar el asistente destino según la lógica multiagente
+                let asistenteEnUso = ASSISTANT_MAP['asistente1'];
+                const resumen = await toAsk(asistenteEnUso, "GET_RESUMEN", this.state);
                 const data: ResumenData = extraerDatosResumen(resumen);
                 await this.onSuccess(data);
                 return;
             }
 
             // Si no respondió, intentar obtener el resumen nuevamente desde el asistente
-            const resumen = await toAsk(this.ASSISTANT_ID, "GET_RESUMEN", this.state);
+            let asistenteEnUso = ASSISTANT_MAP['asistente1'];
+            const resumen = await toAsk(asistenteEnUso, "GET_RESUMEN", this.state);
             const data: ResumenData = extraerDatosResumen(resumen);
             const nombreInvalido = !data.nombre || data.nombre.trim() === "" ||
                 data.nombre.trim() === "- Nombre:" ||
@@ -121,6 +133,7 @@ export class ReconectionFlow {
      */
     private waitForUserResponse(jid: string, timeout: number): Promise<boolean> {
         return new Promise((resolve) => {
+            const { ASSISTANT_MAP } = require("../app");
             let responded = false;
             // Suscribirse a los mensajes entrantes del usuario
             const onMessage = async (msg: any) => {
@@ -141,7 +154,8 @@ export class ReconectionFlow {
                 const userMsg = msg.body;
                 const prompt = `hola, ${userMsg}`;
                 try {
-                    await toAsk(this.ASSISTANT_ID, prompt, this.state);
+                    let asistenteEnUso = ASSISTANT_MAP['asistente1'];
+                    await toAsk(asistenteEnUso, prompt, this.state);
                 } catch (err) {
                     console.error('[ReconectionFlow] Error enviando mensaje al asistente:', err);
                 }

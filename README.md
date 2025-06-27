@@ -1,4 +1,5 @@
-# WhatsApp AI Assistant Bot (BuilderBot.app)
+
+# WhatsApp Multiagente AI Bot (BuilderBot.app)
 
 <p align="center">
   <img src="https://builderbot.vercel.app/assets/thumbnail-vector.png" height="80">
@@ -6,57 +7,81 @@
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/6VbbLI?referralCode=jyd_0y)
 
-This project creates a WhatsApp bot that integrates with an AI assistant using BuilderBot technology. It allows for automated conversations and intelligent responses powered by OpenAI's assistant API.
+Este proyecto implementa un bot de WhatsApp multiagente usando BuilderBot y OpenAI Assistants. El sistema permite que un asistente recepcionista derive conversaciones a otros asistentes especializados, manteniendo el contexto y el hilo de la conversación.
 
-## Features
+## Características principales
 
-- Automated conversation flows for WhatsApp
-- Integration with OpenAI's assistant API
-- Agnostic to WhatsApp provider
-- Automated responses to frequently asked questions
-- Real-time message receiving and responding
-- Interaction tracking with customers
-- Expandable functionality through triggers
+- Arquitectura multiagente: un recepcionista identifica la intención y deriva a asistentes expertos.
+- Integración con OpenAI Assistants para respuestas inteligentes.
+- Flujos conversacionales personalizables y escalables.
+- Manejo de seguimientos automáticos y cierre de conversaciones configurable por variables de entorno.
+- Soporte para integración con Google Sheets y almacenamiento de datos.
+- Despliegue sencillo en Railway, Docker o local.
 
-## Getting Started
+## Estructura de agentes
 
-1. Clone this repository
-2. Install dependencies:
-   ```
+- **Recepcionista**: Primer punto de contacto, clasifica la intención del usuario.
+- **Asistentes especializados**: Atienden consultas específicas (ventas, reservas, soporte, etc.).
+- **Derivación automática**: El recepcionista decide a qué asistente derivar según la intención detectada.
+
+## Variables de entorno obligatorias
+
+Configura tu archivo `.env` con las siguientes variables para controlar los mensajes y tiempos de los flujos:
+
+```env
+ASSISTANT_1=
+ASSISTANT_2=
+ASSISTANT_3=
+ASSISTANT_ID=
+OPENAI_API_KEY=
+ID_GRUPO_RESUMEN=
+msjCierre=
+msjSeguimiento1=
+msjSeguimiento2=
+msjSeguimiento3=
+timeOutCierre=
+timeOutSeguimiento2=
+timeOutSeguimiento3=
+PORT=3000
+```
+
+- **msjCierre**: Mensaje final de cierre de conversación.
+- **msjSeguimiento1/2/3**: Mensajes de seguimiento para cada intento en el flujo de reconexión.
+- **timeOutCierre**: Tiempo (en minutos) antes de cerrar la conversación automáticamente.
+- **timeOutSeguimiento2/3**: Tiempos (en minutos) entre mensajes de seguimiento en reconexión.
+
+## Instalación y ejecución
+
+1. Clona este repositorio.
+2. Instala dependencias:
+   ```sh
    pnpm install
    ```
-3. Set up your environment variables in a `.env` file:
-   ```
-   PORT=3008
-   ASSISTANT_ID=your_openai_assistant_id
-   ```
-4. Run the development server:
-   ```
+3. Configura tu archivo `.env` con los valores requeridos.
+4. Ejecuta el bot en desarrollo:
+   ```sh
    pnpm run dev
    ```
+5. (Opcional) Despliega en Railway o Docker.
 
-### Using Docker (Recommended)
+## Flujo de trabajo multiagente
 
-This project includes a Dockerfile for easy deployment and consistent environments. To use Docker:
+1. El usuario escribe al bot.
+2. El recepcionista (ASSISTANT_1) analiza la intención.
+3. Si es necesario, deriva la conversación a un asistente especializado (ASSISTANT_2, ASSISTANT_3, etc.).
+4. El contexto y el hilo se mantienen durante toda la conversación.
+5. Si el usuario no responde, se activan los mensajes de seguimiento y cierre según la configuración.
 
-1. Build the Docker image:
-   ```
-   docker build -t whatsapp-ai-assistant .
-   ```
-2. Run the container:
-   ```
-   docker run -p 3008:3008 --env-file .env whatsapp-ai-assistant
-   ```
+## Personalización
 
-This method ensures that the application runs in a consistent environment across different systems.
+- Modifica los mensajes y tiempos en el archivo `.env` para adaptar el bot a tu flujo conversacional.
+- Los flujos principales están en `src/Flows/`.
+- El archivo `src/app.ts` orquesta la lógica multiagente y la derivación.
 
-## Usage
+## Créditos
 
-The bot is configured in the `src/app.ts` file. It uses the BuilderBot library to create flows and handle messages. The main welcome flow integrates with the OpenAI assistant to generate responses.
-
-## Documentation
-
-For more detailed information on how to use and extend this bot, please refer to the [BuilderBot documentation](https://builderbot.vercel.app/).
+Desarrollado con [BuilderBot](https://www.builderbot.app/en) y OpenAI.  
+Custom para Pereyra Hugo - DusckCodes.
 
 ## Contributing
 

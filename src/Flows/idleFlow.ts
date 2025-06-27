@@ -8,7 +8,6 @@ import path from 'path';// Import the new logic
 import { ReconectionFlow } from './reconectionFlow';
 
 //** Variables de entorno para el envio de msj de resumen a grupo de WS */
-const ASSISTANT_ID = process.env.ASSISTANT_ID ?? '';
 const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_RESUMEN ?? '';
 
 //** Flow para cierre de conversación, generación de resumen y envio a grupo de WS */
@@ -17,8 +16,13 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
         console.log("Ejecutando idleFlow...");
 
         try {
-            // Obtener el resumen del asistente de OpenAI
-            const resumen = await toAsk(ASSISTANT_ID, "GET_RESUMEN", state);
+            // Determinar el asistente en uso según la lógica multiagente
+            const { analizarDestinoRecepcionista, ASSISTANT_MAP } = require("../app");
+            // Por defecto, usa el recepcionista
+            let asistenteEnUso = ASSISTANT_MAP['asistente1'];
+            // Si el state tiene algún indicio de destino previo, podrías usarlo aquí
+            // (Personaliza esta lógica si tienes un campo de destino en el state)
+            const resumen = await toAsk(asistenteEnUso, "GET_RESUMEN", state);
 
             // Verifica que haya resumen y grupo destino
             if (resumen && ID_GRUPO_RESUMEN) {
@@ -40,13 +44,18 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     data.nombre.trim() === "- Nombre de la Empresa:" ||
                     data.nombre.trim() === "- Cargo:";
                 if (nombreInvalido) {
+                    const { analizarDestinoRecepcionista, ASSISTANT_MAP } = require("../app");
                     const reconFlow = new ReconectionFlow({
                         ctx,
                         state,
                         provider,
                         maxAttempts: 3, // Máximo de intentos de reconexión
                         onSuccess: async (newData) => {
-                            // Si se obtiene el nombre, continuar flujo normal
+                            // Determinar destino usando la lógica multiagente
+                            const destino = analizarDestinoRecepcionista(resumen);
+                            const asistenteDestino = ASSISTANT_MAP[destino];
+                            // Si hay un asistente destino válido, puedes continuar el flujo con ese asistente aquí
+                            // Por ahora, se mantiene el envío de resumen y guardado en Sheets
                             const whatsappLink = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
                             newData.linkWS = whatsappLink;
                             const resumenConLink = `${resumen}\n\n🔗 [Chat del usuario](${whatsappLink})`;
@@ -58,6 +67,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                             }
                             console.log('📝 Datos a guardar en Google Sheets:', newData);
                             await addToSheet(newData);
+                            // Aquí podrías invocar el siguiente flujo con el asistente adecuado si lo deseas
                             return;
                         },
                         onFail: async () => {

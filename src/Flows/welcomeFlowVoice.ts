@@ -7,7 +7,7 @@ import { transcribeAudioFile } from "~/utils/audioTranscriptior";
 import path from "path";
 import fs from "fs";
 
-const setTime = 7 * 60 * 1000 // tiempo de espera antes de finalizar el chat - en millisegundos (minutos*60*1000)
+const setTime = Number(process.env.timeOutCierre) * 60 * 1000; // tiempo configurable desde .env
 
 export const welcomeFlowVoice = addKeyword<BaileysProvider, MemoryDB>(EVENTS.VOICE_NOTE)
     .addAction(async (ctx, { gotoFlow, flowDynamic, state, provider }) => {
