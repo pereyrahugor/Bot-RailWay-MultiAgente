@@ -5,7 +5,7 @@
   <img src="https://builderbot.vercel.app/assets/thumbnail-vector.png" height="80">
 </p>
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/6VbbLI?referralCode=jyd_0y)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/0aizfD?referralCode=yO-oOz)
 
 Este proyecto implementa un bot de WhatsApp multiagente usando BuilderBot y OpenAI Assistants. El sistema permite que un asistente recepcionista derive conversaciones a otros asistentes especializados, manteniendo el contexto y el hilo de la conversación.
 
