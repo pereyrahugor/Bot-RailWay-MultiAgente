@@ -1,0 +1,98 @@
+
+# Deploy and Host Bot_MultiAgente(5) on Railway
+
+## About Hosting
+This repository is designed for easy deployment on Railway, Docker, or any Node.js-compatible cloud platform. It is optimized for cloud hosting and scalable multiagent operations.
+
+## Why Deploy
+- Automate WhatsApp conversations with AI-powered multiagent logic.
+- Centralize customer support, sales, and information flows in a single bot.
+- Reduce manual intervention and improve response times.
+
+## Common Use Cases
+- Customer support automation for businesses.
+- Sales funnel and lead qualification via WhatsApp.
+- Automated follow-ups and reminders for clients.
+- Integration with Google Sheets for CRM or reporting.
+
+## Dependencies for
+This project requires Node.js (v18+), pnpm, and access to OpenAI API. For Google Sheets integration, a valid Google service account is needed.
+
+### Deployment Dependencies
+- Node.js (v18 or higher)
+- pnpm (latest)
+- Docker (for containerized deployment)
+- Railway (for cloud deployment)
+- OpenAI API Key
+- Google Service Account credentials (for Sheets integration)
+
+## Repository Data: WhatsApp Multiagent AI Bot (BuilderBot.app)
+
+### Name
+Bot WhatsApp Multiagente AI Bot (BuilderBot.app)
+
+### Description
+This project implements a multi-agent WhatsApp bot using BuilderBot and OpenAI Assistants. The system allows a receptionist assistant to route conversations to specialized assistants, maintaining context and thread continuity.
+
+### Main Features
+- Multi-agent architecture: a receptionist identifies intent and routes to expert assistants.
+- Integration with OpenAI Assistants for intelligent responses.
+- Customizable and scalable conversational flows.
+- Automated follow-ups and conversation closure configurable via environment variables.
+- Support for Google Sheets integration and data storage.
+- Easy deployment on Railway, Docker, or locally.
+
+### Agent Structure
+- Receptionist: First point of contact, classifies user intent.
+- Specialized assistants: Handle specific queries (sales, reservations, support, etc.).
+- Automatic routing: The receptionist decides which assistant to route to based on detected intent.
+
+### Required Environment Variables
+- ASSISTANT_1, ASSISTANT_2, ASSISTANT_3, ASSISTANT_4, ASSISTANT_5
+- OPENAI_API_KEY
+- ID_GRUPO_RESUMEN
+- msjCierre
+- msjSeguimiento1
+- msjSeguimiento2
+- msjSeguimiento3
+- timeOutCierre
+- timeOutSeguimiento2
+- timeOutSeguimiento3
+- PORT
+
+### Installation & Usage
+1. Clone this repository.
+2. Install dependencies: pnpm install
+3. Configure your .env file with the required values.
+4. Run the bot in development: pnpm run dev
+5. (Optional) Deploy on Railway or Docker.
+
+### Multiagent Workflow
+1. The user writes to the bot.
+2. The receptionist (ASSISTANT_1) analyzes the intent.
+3. If necessary, the conversation is routed to a specialized assistant (ASSISTANT_2, ASSISTANT_3, etc.).
+4. Context and thread are maintained throughout the conversation.
+5. If the user does not respond, follow-up and closure messages are triggered as configured.
+
+### Customization
+- Modify messages and timeouts in the .env file to adapt the bot to your conversational flow.
+- Main flows are in src/Flows/.
+- The file src/app.ts orchestrates the multiagent logic and routing.
+
+### Credits
+Developed with BuilderBot and OpenAI. Custom for Pereyra Hugo - DusckCodes.
+
+### Contributing
+Contributions are welcome! Please submit a Pull Request.
+
+### License
+This project is open-source and available under the MIT license.
+
+
+### Contact
+- Website: https://clientesneurolinks.com
+- Email: pereyrahugor@gmail.com
+
+---
+
+Structure and data generated automatically from the README and current repository configuration.

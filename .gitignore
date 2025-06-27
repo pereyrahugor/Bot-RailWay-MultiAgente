@@ -14,4 +14,4 @@ credentials/
 tmp/
 
 # Ignorar el archivo de integración de Google Sheets (contiene rutas sensibles)
-src/utils/googleSheetsResumen.ts
+
