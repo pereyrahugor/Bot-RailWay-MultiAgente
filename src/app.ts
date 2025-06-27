@@ -68,30 +68,47 @@ const getAssistantResponse = async (assistantId, message, state, fallbackMessage
 };
 
 // IDs genéricos de asistentes
-const ASSISTANT_1 = process.env.ASSISTANT_1; // Recepcionista
-const ASSISTANT_2 = process.env.ASSISTANT_2; // Vendedor Tango
-const ASSISTANT_3 = process.env.ASSISTANT_3; // Vendedor Cámaras
+const ASSISTANT_1 = process.env.ASSISTANT_1; // Asistente 1 (personaliza según uso)
+const ASSISTANT_2 = process.env.ASSISTANT_2; // Asistente 2 (personaliza según uso)
+const ASSISTANT_3 = process.env.ASSISTANT_3; // Asistente 3 (personaliza según uso)
+const ASSISTANT_4 = process.env.ASSISTANT_4; // Asistente 4 (personaliza según uso)
+const ASSISTANT_5 = process.env.ASSISTANT_5; // Asistente 5 (personaliza según uso)
 
 // Mapeo lógico para derivación
 const ASSISTANT_MAP = {
     asistente1: ASSISTANT_1,
     asistente2: ASSISTANT_2,
     asistente3: ASSISTANT_3,
+    asistente4: ASSISTANT_4,
+    asistente5: ASSISTANT_5,
     cliente: null // para asesor humano
 };
 
 /**
  * Analiza la respuesta del recepcionista para determinar el destino.
- * Devuelve: 'asistente1', 'asistente2', 'asistente3', 'cliente', 'ambiguous' o null
+ * Devuelve: 'asistente1', 'asistente2', 'asistente3', 'asistente4', 'asistente5', 'cliente', 'ambiguous' o null
+ * Mejora: ahora soporta asistentes dinámicos según ASSISTANT_MAP
  */
 function analizarDestinoRecepcionista(respuesta) {
     const lower = respuesta.toLowerCase();
-    if (lower.includes('asistente2')) return 'asistente2';
-    if (lower.includes('asistente3')) return 'asistente3';
-    if (lower.includes('asistente1')) return 'asistente1';
-    if (lower.includes('asesor humano')) return 'cliente';
-    // Si contiene "derivar" pero no es claro el destino
-    if (lower.includes('derivar')) return 'ambiguous';
+    // Log para depuración
+    console.log(`[ANALIZAR DESTINO] Analizando respuesta:`, lower);
+    // Buscar coincidencia dinámica con los asistentes definidos
+    for (const key of Object.keys(ASSISTANT_MAP)) {
+        if (key !== 'cliente' && lower.includes(key)) {
+            console.log(`[ANALIZAR DESTINO] Destino detectado dinámicamente:`, key);
+            return key;
+        }
+    }
+    if (lower.includes('asesor humano')) {
+        console.log(`[ANALIZAR DESTINO] Destino: cliente (asesor humano)`);
+        return 'cliente';
+    }
+    if (lower.includes('derivar')) {
+        console.log(`[ANALIZAR DESTINO] Destino ambiguo detectado`);
+        return 'ambiguous';
+    }
+    console.log(`[ANALIZAR DESTINO] No se detectó destino claro.`);
     return null;
 }
 
@@ -143,7 +160,6 @@ const processUserMessage = async (
         let respuestaSinResumen = String(recepcionistaResponse).replace(/GET_RESUMEN[\s\S]+/i, '').trim();
         respuestaSinResumen = respuestaSinResumen
             .replace(/\[Enviando.*$/gim, '')
-           // .replace(/^[()\[\]]+[ \t]*$/gm, '') // Elimina líneas con solo paréntesis/corchetes
             .replace(/^[ \t]*\n/gm, '')
             .trim();
         // 2. Solo enviar la última respuesta limpia del recepcionista al usuario si el destino es 'cliente'
@@ -169,9 +185,11 @@ const processUserMessage = async (
                 "Por favor, responde aunque sea brevemente.",
                 ctx.from
             );
+            console.log(`[DERIVACION] Respuesta del asistente derivado (${destino}):`, respuestaDestino);
             await flowDynamic([{ body: String(respuestaDestino).trim() }]);
             return state;
         } else if (destino === 'ambiguous' || !destino) {
+            console.log(`[DERIVACION] Destino ambiguo o no detectado. El recepcionista continúa la conversación.`);
             // No enviar mensajes adicionales, dejar que el recepcionista continúe la conversación
             return state;
         }

@@ -1,0 +1,25 @@
+MEJORAS Y SUGERENCIAS PENDIENTES DE REVISIÓN
+
+1. Variables de entorno y documentación
+- Revisa y actualiza `.env.example` y la documentación para reflejar todas las variables realmente usadas (ASSISTANT_1 a ASSISTANT_5, mensajes, timeouts, etc.).
+- Elimina variables obsoletas como ASSISTANT_ID.
+- Documenta el formato esperado para variables complejas.
+
+2. Persistencia de estado
+- Actualmente el estado de reconexión se guarda en memoria. Si el bot se reinicia, se pierde. Si necesitas persistencia real, considera una base de datos ligera (ej: Redis, SQLite).
+
+3. Manejo de archivos temporales
+- Si el bot se detiene inesperadamente, pueden quedar archivos huérfanos en `tmp/voiceNote`. Considera un proceso de limpieza periódica.
+
+4. Validación de datos y flujos
+- En los flujos que dependen de datos externos (Google Sheets, archivos JSON), valida siempre la existencia y formato de los datos antes de operar para evitar errores inesperados.
+
+5. Modularidad y reutilización
+- Si varios flujos usan lógica similar para reconexión, derivación o manejo de colas, considera extraer utilidades comunes para evitar duplicación.
+
+6. Documentación y ejemplos
+- El README es muy completo, pero podrías agregar ejemplos de cómo extender la lógica para nuevos asistentes o cómo personalizar la derivación.
+
+7. Código obsoleto y comentarios
+- Elimina comentarios de código antiguo o líneas comentadas que ya no se usan para mantener el código limpio.
+

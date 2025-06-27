@@ -1,0 +1,48 @@
+INSTRUCCIONES PARA ADAPTAR FLUJOS A LA LÓGICA MULTIAGENTE Y VARIABLES DE ENTORNO
+
+1. Centraliza la lógica de selección de asistente
+------------------------------------------------
+- Importa o requiere la lógica centralizada desde src/app.ts:
+  const { analizarDestinoRecepcionista, ASSISTANT_MAP } = require("../app");
+- No uses referencias directas a un ASSISTANT_ID fijo ni variables de entorno obsoletas para el asistente. Usa siempre el mapa ASSISTANT_MAP para obtener el asistente adecuado.
+
+2. Usa el asistente correcto en cada flujo
+------------------------------------------
+- Cuando necesites interactuar con un asistente (por ejemplo, para obtener un resumen, enviar un mensaje, etc.), utiliza:
+  let asistenteEnUso = ASSISTANT_MAP['asistente1'];
+  // O usa la lógica de derivación si aplica:
+  // let asistenteEnUso = analizarDestinoRecepcionista(contexto, estado);
+- Si tu flujo requiere lógica dinámica para elegir el asistente, implementa la función de derivación (analizarDestinoRecepcionista) según tus necesidades.
+
+3. Utiliza variables de entorno para mensajes y timeouts
+--------------------------------------------------------
+- No uses valores fijos para mensajes o timeouts. Obténlos desde process.env:
+  const msjSeguimiento1 = process.env.msjSeguimiento1 || '';
+  const timeOutSeguimiento2 = Number(process.env.timeOutSeguimiento2) * 60 * 1000;
+- Aplica esto para todos los mensajes y configuraciones que puedan variar por entorno.
+
+4. Elimina referencias obsoletas
+-------------------------------
+- Elimina cualquier referencia a variables de entorno antiguas como ASSISTANT_ID o configuraciones que ya no se usan.
+- Asegúrate de que todo el código que interactúa con asistentes pase por la lógica centralizada (ASSISTANT_MAP y/o analizarDestinoRecepcionista).
+
+5. Documenta en el código
+-------------------------
+- Añade comentarios explicando que la lógica multiagente está centralizada y que cualquier cambio de asistente debe hacerse a través de ASSISTANT_MAP o la función de derivación.
+
+EJEMPLO DE ADAPTACIÓN
+---------------------
+Supón que tienes un flujo llamado otroFlow.ts que antes hacía esto:
+  const resumen = await toAsk(ASSISTANT_ID, "GET_RESUMEN", state);
+Debes cambiarlo por:
+  const { ASSISTANT_MAP } = require("../app");
+  let asistenteEnUso = ASSISTANT_MAP['asistente1']; // O usa la lógica de derivación si aplica
+  const resumen = await toAsk(asistenteEnUso, "GET_RESUMEN", state);
+
+RESUMEN
+-------
+1. Importa la lógica multiagente centralizada.
+2. Usa ASSISTANT_MAP para obtener el asistente.
+3. Obtén mensajes y timeouts desde variables de entorno.
+4. Elimina referencias a variables obsoletas.
+5. Documenta los cambios en el código.

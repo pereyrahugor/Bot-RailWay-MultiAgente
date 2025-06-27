@@ -1,0 +1,22 @@
+{
+  "name": "Bot WhatsApp Multiagente BuilderBot",
+  "description": "Bot de WhatsApp multiagente con integración OpenAI, derivación inteligente y soporte para múltiples asistentes.",
+  "plugins": ["docker"],
+  "envs": [
+    { "key": "ASSISTANT_1", "name": "ID Asistente Recepcionista", "required": true },
+    { "key": "ASSISTANT_2", "name": "ID Asistente Vendedor Tango", "required": false },
+    { "key": "ASSISTANT_3", "name": "ID Asistente Vendedor Cámaras", "required": false },
+    { "key": "ASSISTANT_4", "name": "ID Asistente 4 (personalizable)", "required": false },
+    { "key": "ASSISTANT_5", "name": "ID Asistente 5 (personalizable)", "required": false },
+    { "key": "OPENAI_API_KEY", "name": "Clave API OpenAI", "required": true },
+    { "key": "ID_GRUPO_RESUMEN", "name": "ID del grupo de resumen", "required": false },
+    { "key": "PORT", "name": "Puerto de escucha", "required": false, "defaultValue": "3000" },
+    { "key": "msjCierre", "name": "Mensaje de cierre", "required": true },
+    { "key": "msjSeguimiento1", "name": "Mensaje de seguimiento 1", "required": true },
+    { "key": "msjSeguimiento2", "name": "Mensaje de seguimiento 2", "required": true },
+    { "key": "msjSeguimiento3", "name": "Mensaje de seguimiento 3", "required": true },
+    { "key": "timeOutCierre", "name": "Timeout de cierre (milisegundos)", "required": true },
+    { "key": "timeOutSeguimiento2", "name": "Timeout seguimiento 2 (minutos)", "required": true },
+    { "key": "timeOutSeguimiento3", "name": "Timeout seguimiento 3 (minutos)", "required": true }
+  ]
+}
