@@ -36,9 +36,6 @@ ENV PORT=3008
 
 EXPOSE $PORT
 
-# Asegurar que la carpeta de credenciales exista
-RUN mkdir -p /app/credentials
-
 COPY --from=builder /app/assets ./assets
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/*.json /app/*-lock.yaml ./
