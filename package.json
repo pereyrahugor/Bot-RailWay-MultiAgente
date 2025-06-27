@@ -1,0 +1,61 @@
+{
+  "name": "base-bailey-json",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/app.js",
+  "type": "module",
+  "scripts": {
+    "start": "node ./dist/app.js",
+    "lint": "eslint . --no-ignore",
+    "dev": "npm run lint && nodemon ./src/app.ts",
+    "build": "npx rollup -c"
+  },
+  "keywords": [],
+  "dependencies": {
+    "@builderbot-plugins/openai-assistants": "^0.0.2",
+    "@builderbot/bot": "1.2.8",
+    "@builderbot/provider-baileys": "^1.2.8",
+    "@deepgram/sdk": "^3.11.1",
+    "@types/fs-extra": "^11.0.4",
+    "@whiskeysockets/baileys": "6.6.0",
+    "axios": "^1.7.9",
+    "docker": "^0.2.14",
+    "dotenv": "^16.4.7",
+    "exceljs": "^4.4.0",
+    "form-data": "^4.0.1",
+    "fs": "^0.0.1-security",
+    "gaxios": "^6.7.1",
+    "glob": "^11.0.2",
+    "googleapis": "^144.0.0",
+    "moment": "^2.30.1",
+    "openai": "^4.85.0",
+    "path": "^0.12.7",
+    "pdfkit": "^0.16.0",
+    "pnpm": "^10.2.0",
+    "wabt": "^1.0.37",
+    "whisper-node": "^1.1.1",
+    "ws": "^8.18.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.17.18",
+    "@typescript-eslint/eslint-plugin": "^7.2.0",
+    "@typescript-eslint/parser": "^7.4.0",
+    "eslint": "^8.52.0",
+    "eslint-plugin-builderbot": "latest",
+    "nodemon": "^3.1.0",
+    "rollup": "^4.10.0",
+    "rollup-plugin-typescript2": "^0.36.0",
+    "tsx": "^4.7.1",
+    "typescript": "^5.7.3"
+  },
+  "author": "DuskCodes_Arg",
+  "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "sharp": "0.32.6"
+  }
+}
