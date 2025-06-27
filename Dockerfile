@@ -39,11 +39,6 @@ EXPOSE $PORT
 # Asegurar que la carpeta de credenciales exista
 RUN mkdir -p /app/credentials
 
-
-# Copiar el archivo JSON dentro del contenedor
-COPY credentials/bot-test-v1-450813-c85b778a9c36.json /app/credentials/
-
-
 COPY --from=builder /app/assets ./assets
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/*.json /app/*-lock.yaml ./
