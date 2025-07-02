@@ -93,21 +93,20 @@ function analizarDestinoRecepcionista(respuesta) {
     const lower = respuesta.toLowerCase();
     // Log para depuración
     console.log(`[ANALIZAR DESTINO] Analizando respuesta:`, lower);
-    // Buscar coincidencia dinámica con los asistentes definidos
-    for (const key of Object.keys(ASSISTANT_MAP)) {
-        if (key !== 'cliente' && lower.includes(key)) {
-            console.log(`[ANALIZAR DESTINO] Destino detectado dinámicamente:`, key);
-            return key;
-        }
+    // Detecta frases como "derivar a asistenteX" o "derivando a asistenteX" (tolerante a espacios, mayúsculas, punto final)
+    const derivarRegex = /derivar(?:ndo)?\s+a\s+(asistente\s*([1-5])|asesor humano)\.?/i;
+    const match = lower.match(derivarRegex);
+    if (match) {
+        if (match[2]) return `asistente${match[2]}`;
+        if (/asesor humano/.test(match[1])) return 'cliente';
     }
-    if (lower.includes('asesor humano')) {
-        console.log(`[ANALIZAR DESTINO] Destino: cliente (asesor humano)`);
-        return 'cliente';
+    // Detección directa por nombre para los 5 asistentes
+    for (let i = 1; i <= 5; i++) {
+        if (new RegExp(`asistente\\s*${i}\\b`).test(lower)) return `asistente${i}`;
     }
-    if (lower.includes('derivar')) {
-        console.log(`[ANALIZAR DESTINO] Destino ambiguo detectado`);
-        return 'ambiguous';
-    }
+    if (/asesor humano/.test(lower)) return 'cliente';
+    // Si contiene "derivar" o "derivando" pero no es claro el destino
+    if (/derivar|derivando/.test(lower)) return 'ambiguous';
     console.log(`[ANALIZAR DESTINO] No se detectó destino claro.`);
     return null;
 }
@@ -157,8 +156,10 @@ const processUserMessage = async (
         console.log(`[DERIVACION] Respuesta recepcionista:`, recepcionistaResponse);
         console.log(`[DERIVACION] Destino detectado:`, destino);
         // Limpiar la respuesta del recepcionista para el usuario
-        let respuestaSinResumen = String(recepcionistaResponse).replace(/GET_RESUMEN[\s\S]+/i, '').trim();
-        respuestaSinResumen = respuestaSinResumen
+        let respuestaSinResumen = String(recepcionistaResponse)
+            .replace(/GET_RESUMEN[\s\S]+/i, '')
+            // Elimina líneas de derivación como "Derivar a AsistenteX." o "Derivando a AsistenteX." o "Derivar a asesor humano."
+            .replace(/^derivar(?:ndo)?\s+a\s+(asistente\s*[1-5]|asesor humano)\.?$/gim, '')
             .replace(/\[Enviando.*$/gim, '')
             .replace(/^[ \t]*\n/gm, '')
             .trim();
