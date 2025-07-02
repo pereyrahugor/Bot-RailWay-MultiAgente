@@ -68,46 +68,38 @@ const getAssistantResponse = async (assistantId, message, state, fallbackMessage
 };
 
 // IDs genéricos de asistentes
-const ASSISTANT_1 = process.env.ASSISTANT_1; // Asistente 1 (personaliza según uso)
-const ASSISTANT_2 = process.env.ASSISTANT_2; // Asistente 2 (personaliza según uso)
-const ASSISTANT_3 = process.env.ASSISTANT_3; // Asistente 3 (personaliza según uso)
-const ASSISTANT_4 = process.env.ASSISTANT_4; // Asistente 4 (personaliza según uso)
-const ASSISTANT_5 = process.env.ASSISTANT_5; // Asistente 5 (personaliza según uso)
+const ASSISTANT_1 = process.env.ASSISTANT_1; // Recepcionista
+const ASSISTANT_2 = process.env.ASSISTANT_2; // Asistente2
+const ASSISTANT_3 = process.env.ASSISTANT_3; // Asistente3
+const ASSISTANT_4 = process.env.ASSISTANT_4; // ASistente4 (opcional, si se usa otro asistente)
+const ASSISTANT_5 = process.env.ASSISTANT_5; // Asistente5 (opcional, si se usa otro asistente)
 
 // Mapeo lógico para derivación
 const ASSISTANT_MAP = {
     asistente1: ASSISTANT_1,
     asistente2: ASSISTANT_2,
     asistente3: ASSISTANT_3,
-    asistente4: ASSISTANT_4,
-    asistente5: ASSISTANT_5,
+    asistente4: ASSISTANT_4, // opcional
+    asistente5: ASSISTANT_5, // opcional
     cliente: null // para asesor humano
 };
 
 /**
  * Analiza la respuesta del recepcionista para determinar el destino.
- * Devuelve: 'asistente1', 'asistente2', 'asistente3', 'asistente4', 'asistente5', 'cliente', 'ambiguous' o null
- * Mejora: ahora soporta asistentes dinámicos según ASSISTANT_MAP
+ * Devuelve: 'asistente1', 'asistente2', 'asistente3', 'cliente', 'ambiguous' o null
  */
 function analizarDestinoRecepcionista(respuesta) {
     const lower = respuesta.toLowerCase();
-    // Log para depuración
-    console.log(`[ANALIZAR DESTINO] Analizando respuesta:`, lower);
-    // Detecta frases como "derivar a asistenteX" o "derivando a asistenteX" (tolerante a espacios, mayúsculas, punto final)
-    const derivarRegex = /derivar(?:ndo)?\s+a\s+(asistente\s*([1-5])|asesor humano)\.?/i;
-    const match = lower.match(derivarRegex);
-    if (match) {
-        if (match[2]) return `asistente${match[2]}`;
-        if (/asesor humano/.test(match[1])) return 'cliente';
-    }
-    // Detección directa por nombre para los 5 asistentes
-    for (let i = 1; i <= 5; i++) {
-        if (new RegExp(`asistente\\s*${i}\\b`).test(lower)) return `asistente${i}`;
-    }
+    // Detecta frases como "derivar a asistenteX", "derivando a asistenteX", etc. en cualquier parte del texto
+    if (/asistente\s*1\b/.test(lower)) return 'asistente1';
+    if (/asistente\s*2\b/.test(lower)) return 'asistente2';
+    if (/asistente\s*3\b/.test(lower)) return 'asistente3';
+    if (/asistente\s*4\b/.test(lower)) return 'asistente4'; // opcional
+    if (/asistente\s*5\b/.test(lower)) return 'asistente5'; // opcional
+    // Detecta frases como "derivar a asesor humano", "derivando a asesor humano", etc.
     if (/asesor humano/.test(lower)) return 'cliente';
     // Si contiene "derivar" o "derivando" pero no es claro el destino
     if (/derivar|derivando/.test(lower)) return 'ambiguous';
-    console.log(`[ANALIZAR DESTINO] No se detectó destino claro.`);
     return null;
 }
 
@@ -156,11 +148,12 @@ const processUserMessage = async (
         console.log(`[DERIVACION] Respuesta recepcionista:`, recepcionistaResponse);
         console.log(`[DERIVACION] Destino detectado:`, destino);
         // Limpiar la respuesta del recepcionista para el usuario
-        let respuestaSinResumen = String(recepcionistaResponse)
-            .replace(/GET_RESUMEN[\s\S]+/i, '')
-            // Elimina líneas de derivación como "Derivar a AsistenteX." o "Derivando a AsistenteX." o "Derivar a asesor humano."
-            .replace(/^derivar(?:ndo)?\s+a\s+(asistente\s*[1-5]|asesor humano)\.?$/gim, '')
+        let respuestaSinResumen = String(recepcionistaResponse).replace(/GET_RESUMEN[\s\S]+/i, '').trim();
+        respuestaSinResumen = respuestaSinResumen
             .replace(/\[Enviando.*$/gim, '')
+            // Elimina líneas "Derivar a AsistenteX." o "Derivar a asesor humano." (con o sin punto final, mayúsculas/minúsculas)
+            .replace(/^derivar a (asistente\s*\d+|asesor humano)\.?$/gim, '')
+            // .replace(/^[()\[\]]+[ \t]*$/gm, '') // Elimina líneas con solo paréntesis/corchetes
             .replace(/^[ \t]*\n/gm, '')
             .trim();
         // 2. Solo enviar la última respuesta limpia del recepcionista al usuario si el destino es 'cliente'
@@ -186,11 +179,9 @@ const processUserMessage = async (
                 "Por favor, responde aunque sea brevemente.",
                 ctx.from
             );
-            console.log(`[DERIVACION] Respuesta del asistente derivado (${destino}):`, respuestaDestino);
             await flowDynamic([{ body: String(respuestaDestino).trim() }]);
             return state;
         } else if (destino === 'ambiguous' || !destino) {
-            console.log(`[DERIVACION] Destino ambiguo o no detectado. El recepcionista continúa la conversación.`);
             // No enviar mensajes adicionales, dejar que el recepcionista continúe la conversación
             return state;
         }
