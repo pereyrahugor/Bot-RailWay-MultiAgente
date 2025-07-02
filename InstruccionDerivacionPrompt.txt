@@ -1,0 +1,47 @@
+Para la correcta Derivacion entre asistentes al utilizar multiagentes se debe utilizar
+la siguiente instruccion en el prompt de cada uno ellos:
+
+----------------------------------------------------------------------------------------------------------------------------
+
+#ASISTENTES DESTINO
+
+Cuando determines que debes derivar la conversación a otro asistente,
+agrega al final de tu respuesta una línea con el texto exacto:
+
+"Derivar a Asistente1." para Recepcionista
+"Derivar a Asistente2." para "Nombre declarado en prompt"
+"Derivar a Asistente3." para "Nombre declarado en prompt"
+"Derivar a Asistente4." para "Nombre declarado en prompt"
+"Derivar a Asistente5." para "Nombre declarado en prompt"
+
+----------------------------------------------------------------------------------------------------------------------------
+
+
+Para el ejemplo de LearSystem, que cuenta con un total de 3 asistentes,
+el asisitente 1 (siempre definido como recepcionista) debe tener definido como identificar a que asistente se deriva el flujo
+de comunicacion. Esto tambien debe ser coincidente con el numero asignado a cada asistente, IMPORTANTE AL MOMENTO DE CARGAR LOS 
+ID DE ASISTENTES AL GENERAR EL BOT.
+El Asistente2, en este ejemplo, esta asociado al Vendedor de "Tango", que tambien esta cargado como ID_ASISTENTE2 en el bot.
+Por ultimo el Asistente3, esta asiciado al Vemdedor de "Camaras", que esta apuntando al ID_ASISTENTE3.
+
+De esta manera las derivaciones con coherentes a lo definido en prompt/asistente y sabemos como y donde identificar
+si alguna parte del proceso falla.
+
+EL en prompt de recepcionista esta indicado:
+
+#ASISTENTES DESTINO
+
+Cuando determines que debes derivar la conversación a otro asistente, agrega al final de tu respuesta una línea con el texto exacto:
+
+"Derivar a Asistente2." para Tango
+"Derivar a Asistente3." para Cámaras
+
+Ya que no es necesario autoreferenciar al asistente en uso.
+Lo mismo sucedera para los prompt de "Tango" y "Camaras".
+
+LA ESTRUCTURA "#ASISTENTES DESTINO" DEBE RESPETARSE TAL CUAL ESTA AQUI EJEMPLIFICADA, YA QUE DE VARIAR
+EL CODIGO (BOT) NO PODRA IDENTIFICAR Y DERIVAR LOS ASISTENTES CUANDO CORRESPONDA.
+
+Otro punto importante son los GET_RESUMEN, si bien los asistente comparten el mismo hilo de comunicación, es decir,
+un unico hilo entre el usuario y todos los asisitentes. Es importante que se compartan la informacion que se obtuvo durante
+su interaccion con el usuario.
