@@ -97,7 +97,7 @@ function analizarDestinoRecepcionista(respuesta) {
     if (/asistente\s*4\b/.test(lower)) return 'asistente4'; // opcional
     if (/asistente\s*5\b/.test(lower)) return 'asistente5'; // opcional
     // Detecta frases como "derivar a asesor humano", "derivando a asesor humano", etc.
-    if (/asesor humano/.test(lower)) return 'cliente';
+    //if (/asesor humano/.test(lower)) return 'cliente';
     // Si contiene "derivar" o "derivando" pero no es claro el destino
     if (/derivar|derivando/.test(lower)) return 'ambiguous';
     return null;
@@ -157,14 +157,14 @@ const processUserMessage = async (
             .replace(/^[ \t]*\n/gm, '')
             .trim();
         // 2. Solo enviar la última respuesta limpia del recepcionista al usuario si el destino es 'cliente'
-        if (destino === 'cliente') {
-            console.log(`[DERIVACION] Derivando a asesor humano.`);
-            if (respuestaSinResumen) {
-                await flowDynamic([{ body: respuestaSinResumen }]);
-            }
-            // Cerrar el hilo sin enviar saludo final (no gotoFlow de bienvenida)
-            return;
-        }
+        // if (destino === 'cliente') {
+        //     console.log(`[DERIVACION] Derivando a asesor humano.`);
+        //     if (respuestaSinResumen) {
+        //         await flowDynamic([{ body: respuestaSinResumen }]);
+        //     }
+        //     // Cerrar el hilo sin enviar saludo final (no gotoFlow de bienvenida)
+        //     return;
+        // }
         // 2b. Si no es cliente, enviar la respuesta limpia del recepcionista normalmente
         if (respuestaSinResumen) {
             await flowDynamic([{ body: respuestaSinResumen }]);
