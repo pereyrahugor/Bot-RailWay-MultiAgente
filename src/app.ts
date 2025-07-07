@@ -20,6 +20,8 @@ const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_WS ?? "";
 
 const userQueues = new Map();
 const userLocks = new Map();
+// Mapa para persistir el asistente asignado a cada usuario
+const userAssignedAssistant = new Map();
 
 const adapterProvider = createProvider(BaileysProvider, {
     groupsIgnore: false,
@@ -118,60 +120,46 @@ const processUserMessage = async (
 ) => {
     await typing(ctx, provider);
     try {
-        // if (ctx.body === "#ACTUALIZAR#") {
+        // Determinar el asistente asignado actual
+        let assigned = userAssignedAssistant.get(ctx.from) || 'asistente1';
+        let response, destino, resumen;
 
-        //     console.log("📌 BaseProductos Actualizado...");
-        //     await getSheet2();
-        //     console.log("📌 Ventas Actualizado...");
-        //     await getSheet1();
-        //     console.log("📌 Alquiler Actualizado...");
-        // }
-
-        // 1. Enviar mensaje al recepcionista (asistente1)
-        const recepcionistaResponse = await getAssistantResponse(
-            ASSISTANT_1,
+        // 1. Enviar mensaje al asistente asignado
+        response = await getAssistantResponse(
+            ASSISTANT_MAP[assigned],
             ctx.body,
             state,
             "Por favor, responde aunque sea brevemente.",
             ctx.from
         );
-        if (!recepcionistaResponse) {
+        if (!response) {
             await errorReporter.reportError(
-                new Error("No se recibió respuesta del recepcionista."),
+                new Error("No se recibió respuesta del asistente."),
                 ctx.from,
                 `https://wa.me/${ctx.from}`
             );
             return;
         }
-        const destino = analizarDestinoRecepcionista(recepcionistaResponse);
-        const resumen = extraerResumenRecepcionista(recepcionistaResponse);
-        console.log(`[DERIVACION] Respuesta recepcionista:`, recepcionistaResponse);
+        destino = analizarDestinoRecepcionista(response);
+        resumen = extraerResumenRecepcionista(response);
+        console.log(`[DERIVACION] Respuesta ${assigned}:`, response);
         console.log(`[DERIVACION] Destino detectado:`, destino);
-        // Limpiar la respuesta del recepcionista para el usuario
-        let respuestaSinResumen = String(recepcionistaResponse).replace(/GET_RESUMEN[\s\S]+/i, '').trim();
-        respuestaSinResumen = respuestaSinResumen
+        // Limpiar la respuesta para el usuario
+        let respuestaSinResumen = String(response)
+            .replace(/GET_RESUMEN[\s\S]+/i, '')
+            .replace(/^derivar(?:ndo)? a (asistente\s*[1-5]|asesor humano)\.?$/gim, '')
             .replace(/\[Enviando.*$/gim, '')
-            // Elimina líneas "Derivar a AsistenteX." o "Derivar a asesor humano." (con o sin punto final, mayúsculas/minúsculas)
-            .replace(/^derivar a (asistente\s*\d+|asesor humano)\.?$/gim, '')
-            // .replace(/^[()\[\]]+[ \t]*$/gm, '') // Elimina líneas con solo paréntesis/corchetes
             .replace(/^[ \t]*\n/gm, '')
             .trim();
-        // 2. Solo enviar la última respuesta limpia del recepcionista al usuario si el destino es 'cliente'
-        // if (destino === 'cliente') {
-        //     console.log(`[DERIVACION] Derivando a asesor humano.`);
-        //     if (respuestaSinResumen) {
-        //         await flowDynamic([{ body: respuestaSinResumen }]);
-        //     }
-        //     // Cerrar el hilo sin enviar saludo final (no gotoFlow de bienvenida)
-        //     return;
-        // }
-        // 2b. Si no es cliente, enviar la respuesta limpia del recepcionista normalmente
-        if (respuestaSinResumen) {
-            await flowDynamic([{ body: respuestaSinResumen }]);
-        }
-        // 3. Derivación automática si es claro y no es cliente
+
+        // Si hay una derivación clara, actualizar el asistente asignado
         if (destino && ASSISTANT_MAP[destino]) {
-            console.log(`[DERIVACION] Derivando a ${destino}.`);
+            userAssignedAssistant.set(ctx.from, destino);
+            // Enviar respuesta limpia del asistente anterior (si hay)
+            if (respuestaSinResumen) {
+                await flowDynamic([{ body: respuestaSinResumen }]);
+            }
+            // Derivar y responder con el nuevo asistente
             const respuestaDestino = await getAssistantResponse(
                 ASSISTANT_MAP[destino],
                 resumen,
@@ -181,21 +169,33 @@ const processUserMessage = async (
             );
             await flowDynamic([{ body: String(respuestaDestino).trim() }]);
             return state;
-        } else if (destino === 'ambiguous' || !destino) {
-            // No enviar mensajes adicionales, dejar que el recepcionista continúe la conversación
+        } else if (destino === 'cliente') {
+            userAssignedAssistant.set(ctx.from, 'cliente');
+            if (respuestaSinResumen) {
+                await flowDynamic([{ body: respuestaSinResumen }]);
+            }
+            // Aquí podrías cerrar el hilo si lo deseas
+            return;
+        } else if (destino === 'ambiguous') {
+            // No cambiar el asistente, solo mostrar respuesta
+            if (respuestaSinResumen) {
+                await flowDynamic([{ body: respuestaSinResumen }]);
+            }
+            return state;
+        } else {
+            // No hay derivación, mantener el asistente actual
+            if (respuestaSinResumen) {
+                await flowDynamic([{ body: respuestaSinResumen }]);
+            }
             return state;
         }
     } catch (error) {
         console.error("Error al procesar el mensaje del usuario:", error);
-
-        // Enviar reporte de error al grupo de WhatsApp
         await errorReporter.reportError(
             error,
             ctx.from,
             `https://wa.me/${ctx.from}`
         );
-
-        // 📌 Manejo de error: volver al flujo adecuado
         if (ctx.type === EVENTS.VOICE_NOTE) {
             return gotoFlow(welcomeFlowVoice);
         } else {
