@@ -77,7 +77,7 @@ const ASSISTANT_4 = process.env.ASSISTANT_4; // ASistente4 (opcional, si se usa 
 const ASSISTANT_5 = process.env.ASSISTANT_5; // Asistente5 (opcional, si se usa otro asistente)
 
 // Mapeo lógico para derivación
-const ASSISTANT_MAP = {
+export const ASSISTANT_MAP = {
     asistente1: ASSISTANT_1,
     asistente2: ASSISTANT_2,
     asistente3: ASSISTANT_3,
@@ -90,7 +90,7 @@ const ASSISTANT_MAP = {
  * Analiza la respuesta del recepcionista para determinar el destino.
  * Devuelve: 'asistente1', 'asistente2', 'asistente3', 'cliente', 'ambiguous' o null
  */
-function analizarDestinoRecepcionista(respuesta) {
+export function analizarDestinoRecepcionista(respuesta) {
     const lower = respuesta.toLowerCase();
     // Detecta frases como "derivar a asistenteX", "derivando a asistenteX", etc. en cualquier parte del texto
     if (/asistente\s*1\b/.test(lower)) return 'asistente1';
@@ -108,7 +108,7 @@ function analizarDestinoRecepcionista(respuesta) {
 /**
  * Extrae el resumen GET_RESUMEN de la respuesta del recepcionista
  */
-function extraerResumenRecepcionista(respuesta) {
+export function extraerResumenRecepcionista(respuesta) {
     // Busca bloques que comiencen con GET_RESUMEN
     const match = respuesta.match(/GET_RESUMEN[\s\S]+/i);
     return match ? match[0].trim() : respuesta;
@@ -272,9 +272,15 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-export { welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg,
-    handleQueue, userQueues, userLocks,
- };
+export {
+    welcomeFlowTxt,
+    welcomeFlowVoice,
+    welcomeFlowImg,
+    handleQueue,
+    userQueues,
+    userLocks,
+    userAssignedAssistant
+};
 
 main();
 

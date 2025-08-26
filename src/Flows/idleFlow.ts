@@ -4,11 +4,13 @@ import { ResumenData } from '~/utils/googleSheetsResumen';
 import { extraerDatosResumen } from '~/utils/extractJsonData';
 //import { addToSheet } from '~/utils/googleSheetsResumen';
 import fs from 'fs';
-import path from 'path';// Import the new logic
+import path from 'path';
 import { ReconectionFlow } from './reconectionFlow';
+import { userAssignedAssistant, ASSISTANT_MAP, analizarDestinoRecepcionista } from '../app';
 
 //** Variables de entorno para el envio de msj de resumen a grupo de WS */
 const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_RESUMEN ?? '';
+const msjCierre = process.env.msjCierre || "¡Gracias por tu consulta! Si necesitas algo más, estamos para ayudarte.";
 
 //** Flow para cierre de conversación, generación de resumen y envio a grupo de WS */
 const idleFlow = addKeyword(EVENTS.ACTION).addAction(
@@ -17,7 +19,6 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
 
         try {
             // Determinar el asistente en uso según la lógica multiagente
-            const { userAssignedAssistant, ASSISTANT_MAP } = require("../app");
             let asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(ctx.from) || 'asistente1'];
             // Si el state tiene algún indicio de destino previo, podrías usarlo aquí
             // (Personaliza esta lógica si tienes un campo de destino en el state)
@@ -43,7 +44,6 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     data.nombre.trim() === "- Nombre de la Empresa:" ||
                     data.nombre.trim() === "- Cargo:";
                 if (nombreInvalido) {
-                    const { analizarDestinoRecepcionista, ASSISTANT_MAP } = require("../app");
                     const reconFlow = new ReconectionFlow({
                         ctx,
                         state,
@@ -87,7 +87,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     });
                     // Ejecuta el ciclo de reconexión y termina el flujo aquí
                     await reconFlow.start();
-                    return endFlow();
+                    return endFlow(msjCierre);
                 }
 
                 // Si el nombre no está vacío, continúa el flujo normal
@@ -119,7 +119,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
         }
 
         // Mensaje de cierre del flujo
-        return endFlow("SALUDOS, ¡GRACIAS POR TU TIEMPO! Si necesitas más ayuda, no dudes en contactarnos. 😊 - TEST");
+        return endFlow(msjCierre);
     }
 );
 
@@ -127,4 +127,4 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-export { idleFlow };
+export { idleFlow, userAssignedAssistant };
