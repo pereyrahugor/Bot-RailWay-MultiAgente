@@ -30,10 +30,13 @@ const adapterProvider = createProvider(BaileysProvider, {
 
 const errorReporter = new ErrorReporter(adapterProvider, ID_GRUPO_RESUMEN); // Reemplaza YOUR_GROUP_ID con el ID del grupo de WhatsApp
 
-const TIMEOUT_MS = 30000;
+const TIMEOUT_MS = 40000;
 
 // Control de timeout por usuario para evitar ejecuciones automáticas superpuestas
 const userTimeouts = new Map();
+
+// Mapa para controlar reintentos por usuario
+const userRetryCount = new Map();
 
 const getAssistantResponse = async (assistantId, message, state, fallbackMessage, userId) => {
   // Si hay un timeout previo, lo limpiamos
@@ -45,9 +48,23 @@ const getAssistantResponse = async (assistantId, message, state, fallbackMessage
   let timeoutResolve;
   const timeoutPromise = new Promise((resolve) => {
     timeoutResolve = resolve;
-    const timeoutId = setTimeout(() => {
-      console.warn("⏱ Timeout alcanzado. Reintentando con mensaje de control...");
-      resolve(toAsk(assistantId, fallbackMessage ?? message, state));
+    const timeoutId = setTimeout(async () => {
+      // Reintentos solo al asistente
+      const retries = userRetryCount.get(userId) || 0;
+      if (retries < 2) {
+        userRetryCount.set(userId, retries + 1);
+        console.warn(`⏱ Timeout alcanzado. Reintentando (${retries + 1}/3) con el último mensaje del usuario al asistente...`);
+        resolve(toAsk(assistantId, message, state));
+      } else {
+        userRetryCount.set(userId, 0); // Reset para futuros intentos
+        console.error(`⏱ Timeout alcanzado. Se realizaron 3 intentos sin respuesta del asistente. Reportando error al grupo.`);
+        await errorReporter.reportError(
+          new Error("No se recibió respuesta del asistente tras 3 intentos."),
+          userId,
+          `https://wa.me/${userId}`
+        );
+        resolve(null);
+      }
       userTimeouts.delete(userId);
     }, TIMEOUT_MS);
     userTimeouts.set(userId, timeoutId);
@@ -55,12 +72,12 @@ const getAssistantResponse = async (assistantId, message, state, fallbackMessage
 
   // Lanzamos la petición a OpenAI
   const askPromise = toAsk(assistantId, message, state).then((result) => {
-    // Si responde antes del timeout, limpiamos el timeout
+    // Si responde antes del timeout, limpiamos el timeout y el contador de reintentos
     if (userTimeouts.has(userId)) {
       clearTimeout(userTimeouts.get(userId));
       userTimeouts.delete(userId);
     }
-    // Resolvemos el timeout para evitar que quede pendiente
+    userRetryCount.set(userId, 0);
     timeoutResolve(result);
     return result;
   });
