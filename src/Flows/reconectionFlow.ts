@@ -2,6 +2,7 @@
 import { toAsk } from '@builderbot-plugins/openai-assistants';
 import { extraerDatosResumen } from '~/utils/extractJsonData';
 import { ResumenData } from '~/utils/googleSheetsResumen';
+import { analizarDestinoRecepcionista, ASSISTANT_MAP } from "../app";
 
 // Opciones para configurar el flujo de reconexión
 interface ReconectionOptions {
@@ -37,8 +38,6 @@ export class ReconectionFlow {
 
     // Inicia el ciclo de reconexión
     async start() {
-        // Importar lógica multiagente
-        const { analizarDestinoRecepcionista, ASSISTANT_MAP } = require("../app");
         // Intentar restaurar el estado previo si existe
         if (this.state && this.state.reconectionFlow) {
             this.restoreState(this.state.reconectionFlow);
@@ -133,7 +132,6 @@ export class ReconectionFlow {
      */
     private waitForUserResponse(jid: string, timeout: number): Promise<boolean> {
         return new Promise((resolve) => {
-            const { ASSISTANT_MAP } = require("../app");
             let responded = false;
             // Suscribirse a los mensajes entrantes del usuario
             const onMessage = async (msg: any) => {
