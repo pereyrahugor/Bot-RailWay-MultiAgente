@@ -38,7 +38,14 @@ const userTimeouts = new Map();
 // Mapa para controlar reintentos por usuario
 const userRetryCount = new Map();
 
-const getAssistantResponse = async (assistantId, message, state, fallbackMessage, userId) => {
+export const getAssistantResponse = async (assistantId, message, state, fallbackMessage, userId, thread_id = null) => {
+    // Si es un nuevo hilo, envía primero la fecha y hora actual
+    if (!thread_id) {
+        const moment = (await import('moment')).default;
+        const fechaHoraActual = moment().format('YYYY-MM-DD HH:mm');
+        const mensajeFecha = `La fecha y hora actual es: ${fechaHoraActual}`;
+        await toAsk(assistantId, mensajeFecha, state);
+    }
   // Si hay un timeout previo, lo limpiamos
   if (userTimeouts.has(userId)) {
     clearTimeout(userTimeouts.get(userId));
@@ -138,11 +145,8 @@ const processUserMessage = async (
     await typing(ctx, provider);
     try {
         // Determinar el asistente asignado actual
-        let assigned = userAssignedAssistant.get(ctx.from) || 'asistente1';
-        let response, destino, resumen;
-
-        // 1. Enviar mensaje al asistente asignado
-        response = await getAssistantResponse(
+        const assigned = userAssignedAssistant.get(ctx.from) || 'asistente1';
+        const response = await getAssistantResponse(
             ASSISTANT_MAP[assigned],
             ctx.body,
             state,
@@ -157,12 +161,12 @@ const processUserMessage = async (
             );
             return;
         }
-        destino = analizarDestinoRecepcionista(response);
-        resumen = extraerResumenRecepcionista(response);
+        const destino = analizarDestinoRecepcionista(response);
+        const resumen = extraerResumenRecepcionista(response);
         console.log(`[DERIVACION] Respuesta ${assigned}:`, response);
         console.log(`[DERIVACION] Destino detectado:`, destino);
         // Limpiar la respuesta para el usuario
-        let respuestaSinResumen = String(response)
+        const respuestaSinResumen = String(response)
             .replace(/GET_RESUMEN[\s\S]+/i, '')
             .replace(/^derivar(?:ndo)? a (asistente\s*[1-5]|asesor humano)\.?$/gim, '')
             .replace(/\[Enviando.*$/gim, '')

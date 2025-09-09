@@ -19,7 +19,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
 
         try {
             // Determinar el asistente en uso según la lógica multiagente
-            let asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(ctx.from) || 'asistente1'];
+            const asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(ctx.from) || 'asistente1'];
             // Si el state tiene algún indicio de destino previo, podrías usarlo aquí
             // (Personaliza esta lógica si tienes un campo de destino en el state)
             const resumen = await toAsk(asistenteEnUso, "GET_RESUMEN", state);

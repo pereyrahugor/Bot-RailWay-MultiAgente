@@ -22,8 +22,6 @@ export const welcomeFlowVoice = addKeyword<BaileysProvider, MemoryDB>(EVENTS.VOI
         userQueues.set(userId, []);
       }
 
-        await flowDynamic("Dame un segundo para escucharte!");
-
         // 📌 Definir ruta donde se guardarán los audios
         const audioFolder = path.join("./tmp/voiceNote/");
 

@@ -99,7 +99,7 @@ export class ReconectionFlow {
                 // Limpiar el estado de reconexión al éxito
                 if (this.state) delete this.state.reconectionFlow;
                 // Determinar el asistente destino según la lógica multiagente
-                let asistenteEnUso = ASSISTANT_MAP['asistente1'];
+                const asistenteEnUso = ASSISTANT_MAP['asistente1'];
                 const resumen = await toAsk(asistenteEnUso, "GET_RESUMEN", this.state);
                 const data: ResumenData = extraerDatosResumen(resumen);
                 await this.onSuccess(data);
@@ -107,7 +107,7 @@ export class ReconectionFlow {
             }
 
             // Si no respondió, intentar obtener el resumen nuevamente desde el asistente
-            let asistenteEnUso = ASSISTANT_MAP['asistente1'];
+            const asistenteEnUso = ASSISTANT_MAP['asistente1'];
             const resumen = await toAsk(asistenteEnUso, "GET_RESUMEN", this.state);
             const data: ResumenData = extraerDatosResumen(resumen);
             const nombreInvalido = !data.nombre || data.nombre.trim() === "" ||
@@ -152,7 +152,7 @@ export class ReconectionFlow {
                 const userMsg = msg.body;
                 const prompt = `hola, ${userMsg}`;
                 try {
-                    let asistenteEnUso = ASSISTANT_MAP['asistente1'];
+                    const asistenteEnUso = ASSISTANT_MAP['asistente1'];
                     await toAsk(asistenteEnUso, prompt, this.state);
                 } catch (err) {
                     console.error('[ReconectionFlow] Error enviando mensaje al asistente:', err);
