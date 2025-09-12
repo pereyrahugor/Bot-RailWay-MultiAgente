@@ -107,7 +107,6 @@ export const ASSISTANT_MAP = {
     asistente3: ASSISTANT_3,
     asistente4: ASSISTANT_4, // opcional
     asistente5: ASSISTANT_5, // opcional
-    cliente: null // para asesor humano
 };
 
 /**
@@ -190,13 +189,6 @@ const processUserMessage = async (
             );
             await flowDynamic([{ body: String(respuestaDestino).trim() }]);
             return state;
-        } else if (destino === 'cliente') {
-            userAssignedAssistant.set(ctx.from, 'cliente');
-            if (respuestaSinResumen) {
-                await flowDynamic([{ body: respuestaSinResumen }]);
-            }
-            // Aquí podrías cerrar el hilo si lo deseas
-            return;
         } else if (destino === 'ambiguous') {
             // No cambiar el asistente, solo mostrar respuesta
             if (respuestaSinResumen) {
