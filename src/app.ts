@@ -541,7 +541,8 @@ export {
     handleQueue,
     userQueues,
     userLocks,
-    userAssignedAssistant
+    userAssignedAssistant,
+    processUserMessage
 };
 
 main();
