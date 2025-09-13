@@ -1,3 +1,11 @@
+// ...existing imports y lógica del bot...
+
+import path from 'path';
+import serve from 'serve-static';
+import { Server } from 'socket.io';
+import fs from 'fs';
+// Estado global para encender/apagar el bot
+//let botEnabled = true;
 import "dotenv/config";
 import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@builderbot/bot";
 import { MemoryDB } from "@builderbot/bot";
@@ -8,12 +16,27 @@ import { idleFlow } from "./Flows/idleFlow";
 import { welcomeFlowTxt } from "./Flows/welcomeFlowTxt";
 import { welcomeFlowVoice } from "./Flows/welcomeFlowVoice";
 import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
-// import { getSheet2 } from "./addModule/getSheet2";
-// import { getSheet1 } from "./addModule/getSheet1";
+import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
+//import { imgResponseFlow } from "./Flows/imgResponse";
+//import { getSheet2 } from "./addModule/getSheet2";
+//import { getSheet1 } from "./addModule/getSheet1";
+//import { listImg } from "./addModule/listImg";
 import { ErrorReporter } from "./utils/errorReporter";
+//import { testAuth } from './utils/test-google-auth.js';
+import { AssistantBridge } from './utils-web/AssistantBridge';
+import { WebChatManager } from './utils-web/WebChatManager';
+import { WebChatSession } from './utils-web/WebChatSession';
+import { fileURLToPath } from 'url';
 
-/** Puerto en el que se ejecutará el servidor */
-const PORT = process.env.PORT ?? "";
+// Definir __dirname para ES modules
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Instancia global de WebChatManager para sesiones webchat
+const webChatManager = new WebChatManager();
+// Eliminado: processUserMessageWeb. Usar lógica principal para ambos canales.
+
+/** Puerto en el que se ejecutará el servidor (Railway usa 8080 por defecto) */
+const PORT = process.env.PORT || 8080;
+
 /** ID del asistente de OpenAI */
 //const ASSISTANT_ID = process.env.ASSISTANT_ID;
 const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_WS ?? "";
@@ -240,44 +263,269 @@ const handleQueue = async (userId) => {
 
 // Main function to initialize the bot and load Google Sheets data
 const main = async () => {
-    // // Paso 1: Inicializar datos desde Google Sheets
-    // console.log("📌 Inicializando datos desde Google Sheets...");
+    // Verificar credenciales de Google Sheets al iniciar
+    //await testAuth();
 
-    // // Paso 2: Cargar datos de ventas desde la hoja de cálculo
-    // const sheetVentas = await getSheet2();
-    // if (!sheetVentas || sheetVentas.length === 0) {
-    //     console.warn("⚠️ No se encontraron datos en la hoja de cálculo de ventas. Continuando sin datos de ventas...");
-    // } else {
-    //     console.log("✅ Datos de ventas cargados en memoria.");
-    // }
+    // Actualizar listado de imágenes en vector store
+    //await listImg();
 
-    // // Paso 3: Cargar datos de alquiler desde la hoja de cálculo
-    // const sheetAlquiler = await getSheet1();
-    // if (!sheetAlquiler || sheetAlquiler.length === 0) {
-    //     console.warn("⚠️ No se encontraron datos en la hoja de cálculo de alquiler. Continuando sin datos de alquiler...");
-    // } else {
-    //     console.log("✅ Datos de alquiler cargados en memoria.");
-    // }
+    // Paso 1: Inicializar datos desde Google Sheets
+    // ...existing code...
 
-    // Paso 4: Crear el flujo principal del bot
-    const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, idleFlow]);
-    // Paso 5: Crear el proveedor de WhatsApp (Baileys)
-    const adapterProvider = createProvider(BaileysProvider, {
-        groupsIgnore: false,
-        readStatus: false,
-    });
-    // Paso 6: Crear la base de datos en memoria
-    const adapterDB = new MemoryDB();
-    // Paso 7: Inicializar el bot con los flujos, proveedor y base de datos
-    const { httpServer } = await createBot({
-        flow: adapterFlow,
-        provider: adapterProvider,
-        database: adapterDB,
-    });
 
-    // Paso 8: Inyectar el servidor HTTP para el proveedor
-    httpInject(adapterProvider.server);
-    // Paso 9: Iniciar el servidor HTTP en el puerto especificado
+                // ...existing code...
+                const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowDoc, idleFlow]);
+                const adapterProvider = createProvider(BaileysProvider, {
+                    groupsIgnore: false,
+                    readStatus: false,
+                });
+                const adapterDB = new MemoryDB();
+                const { httpServer } = await createBot({
+                    flow: adapterFlow,
+                    provider: adapterProvider,
+                    database: adapterDB,
+                });
+                httpInject(adapterProvider.server);
+
+                // Usar la instancia Polka (adapterProvider.server) para rutas
+                const polkaApp = adapterProvider.server;
+                polkaApp.use("/js", serve("src/js"));
+                polkaApp.use("/style", serve("src/style"));
+                // Agregar ruta personalizada para el webchat
+                polkaApp.get('/webchat', (req, res) => {
+                    res.sendFile(path.join(__dirname, '../webchat.html'));
+                });
+
+                // Obtener el servidor HTTP real de BuilderBot después de httpInject
+                const realHttpServer = adapterProvider.server.server;
+
+                // Integrar Socket.IO sobre el servidor HTTP real de BuilderBot
+                const io = new Server(realHttpServer, { cors: { origin: '*' } });
+                io.on('connection', (socket) => {
+                    console.log('💬 Cliente web conectado');
+                    socket.on('message', async (msg) => {
+                        // Procesar el mensaje usando la lógica principal del bot
+                        try {
+                            let ip = '';
+                            const xff = socket.handshake.headers['x-forwarded-for'];
+                            if (typeof xff === 'string') {
+                                ip = xff.split(',')[0];
+                            } else if (Array.isArray(xff)) {
+                                ip = xff[0];
+                            } else {
+                                ip = socket.handshake.address || '';
+                            }
+                            // Centralizar historial y estado igual que WhatsApp
+                            if (!global.webchatHistories) global.webchatHistories = {};
+                            const historyKey = `webchat_${ip}`;
+                            if (!global.webchatHistories[historyKey]) global.webchatHistories[historyKey] = [];
+                            const _history = global.webchatHistories[historyKey];
+                            const state = {
+                                get: function (key) {
+                                    if (key === 'history') return _history;
+                                    return undefined;
+                                },
+                                update: async function (msg, role = 'user') {
+                                    if (_history.length > 0) {
+                                        const last = _history[_history.length - 1];
+                                        if (last.role === role && last.content === msg) return;
+                                    }
+                                    _history.push({ role, content: msg });
+                                    if (_history.length >= 6) {
+                                        const last3 = _history.slice(-3);
+                                        if (last3.every(h => h.role === 'user' && h.content === msg)) {
+                                            _history.length = 0;
+                                        }
+                                    }
+                                },
+                                clear: async function () { _history.length = 0; }
+                            };
+                            const provider = undefined;
+                            const gotoFlow = () => {};
+                            let replyText = '';
+                            const flowDynamic = async (arr) => {
+                                if (Array.isArray(arr)) {
+                                    replyText = arr.map(a => a.body).join('\n');
+                                } else if (typeof arr === 'string') {
+                                    replyText = arr;
+                                }
+                            };
+                            if (msg.trim().toLowerCase() === "#reset" || msg.trim().toLowerCase() === "#cerrar") {
+                                await state.clear();
+                                replyText = "🔄 El chat ha sido reiniciado. Puedes comenzar una nueva conversación.";
+                            } else {
+                                await processUserMessage({ from: ip, body: msg, type: 'webchat' }, { flowDynamic, state, provider, gotoFlow });
+                            }
+                            socket.emit('reply', replyText);
+                        } catch (err) {
+                            console.error('Error procesando mensaje webchat:', err);
+                            socket.emit('reply', 'Hubo un error procesando tu mensaje.');
+                        }
+                    });
+                });
+
+                // Agregar ruta personalizada para el webchat
+                polkaApp.get('/webchat', (req, res) => {
+                    res.setHeader('Content-Type', 'text/html');
+                    res.end(fs.readFileSync(path.join(__dirname, '../webchat.html')));
+                });
+
+                // Integrar AssistantBridge si es necesario
+                const assistantBridge = new AssistantBridge();
+                assistantBridge.setupWebChat(polkaApp, realHttpServer);
+
+                                polkaApp.post('/webchat-api', async (req, res) => {
+                                    console.log('Llamada a /webchat-api'); // log para debug
+                                    // Si el body ya está disponible (por ejemplo, con body-parser), úsalo directamente
+                                    if (req.body && req.body.message) {
+                                        console.log('Body recibido por body-parser:', req.body); // debug
+                                        try {
+                                            const message = req.body.message;
+                                            console.log('Mensaje recibido en webchat:', message); // debug
+                                            let ip = '';
+                                            const xff = req.headers['x-forwarded-for'];
+                                            if (typeof xff === 'string') {
+                                                ip = xff.split(',')[0];
+                                            } else if (Array.isArray(xff)) {
+                                                ip = xff[0];
+                                            } else {
+                                                ip = req.socket.remoteAddress || '';
+                                            }
+                                            // Crear un ctx similar al de WhatsApp, usando el IP como 'from'
+                                            const ctx = {
+                                                from: ip,
+                                                body: message,
+                                                type: 'webchat',
+                                                // Puedes agregar más propiedades si tu lógica lo requiere
+                                            };
+                                            // Usar la lógica principal del bot (processUserMessage)
+                                            let replyText = '';
+                                            // Simular flowDynamic para capturar la respuesta
+                                            const flowDynamic = async (arr) => {
+                                                if (Array.isArray(arr)) {
+                                                    replyText = arr.map(a => a.body).join('\n');
+                                                } else if (typeof arr === 'string') {
+                                                    replyText = arr;
+                                                }
+                                            };
+                                                // Usar WebChatManager y WebChatSession para gestionar la sesión webchat
+                                                const { getOrCreateThreadId, sendMessageToThread, deleteThread } = await import('./utils-web/openaiThreadBridge');
+                                                const session = webChatManager.getSession(ip);
+                                                if (message.trim().toLowerCase() === "#reset" || message.trim().toLowerCase() === "#cerrar") {
+                                                    await deleteThread(session);
+                                                    session.clear();
+                                                    replyText = "🔄 El chat ha sido reiniciado. Puedes comenzar una nueva conversación.";
+                                                } else {
+                                                    // Asignar el asistente actual igual que WhatsApp
+                                                    const assigned = userAssignedAssistant.get(ip) || 'asistente1';
+                                                    const assistantId = ASSISTANT_MAP[assigned];
+                                                    session.addUserMessage(message);
+                                                    const threadId = await getOrCreateThreadId(session);
+                                                    let reply = await sendMessageToThread(threadId, message, assistantId);
+                                                    let destino = analizarDestinoRecepcionista(reply);
+                                                    // Si hay una derivación clara, actualizar el asistente asignado y volver a consultar al nuevo asistente
+                                                    if (destino && ASSISTANT_MAP[destino]) {
+                                                        userAssignedAssistant.set(ip, destino);
+                                                        // Reconsultar al nuevo asistente para esta misma interacción
+                                                        reply = await sendMessageToThread(threadId, message, ASSISTANT_MAP[destino]);
+                                                        destino = analizarDestinoRecepcionista(reply); // por si hay doble derivación
+                                                    }
+                                                    // Limpiar la respuesta para el usuario
+                                                    let respuestaSinResumen = String(reply)
+                                                        .replace(/GET_RESUMEN[\s\S]+/i, '')
+                                                        .replace(/^derivar(?:ndo)? a (asistente\s*[1-5]|asesor humano)\.?$/gim, '')
+                                                        .replace(/\[Enviando.*$/gim, '')
+                                                        .replace(/^[ \t]*\n/gm, '')
+                                                        .trim();
+                                                    session.addAssistantMessage(reply);
+                                                    replyText = respuestaSinResumen;
+                                            }
+                                            res.setHeader('Content-Type', 'application/json');
+                                            res.end(JSON.stringify({ reply: replyText }));
+                                        } catch (err) {
+                                            console.error('Error en /webchat-api:', err); // debug
+                                            res.statusCode = 500;
+                                            res.end(JSON.stringify({ reply: 'Hubo un error procesando tu mensaje.' }));
+                                        }
+                                    } else {
+                                        // Fallback manual si req.body no está disponible
+                                        let body = '';
+                                        req.on('data', chunk => { body += chunk; });
+                                        req.on('end', async () => {
+                                            console.log('Body recibido en /webchat-api:', body); // log para debug
+                                            try {
+                                                const { message } = JSON.parse(body);
+                                                console.log('Mensaje recibido en webchat:', message); // debug
+                                                let ip = '';
+                                                const xff = req.headers['x-forwarded-for'];
+                                                if (typeof xff === 'string') {
+                                                    ip = xff.split(',')[0];
+                                                } else if (Array.isArray(xff)) {
+                                                    ip = xff[0];
+                                                } else {
+                                                    ip = req.socket.remoteAddress || '';
+                                                }
+                                                // Centralizar historial y estado igual que WhatsApp
+                                                if (!global.webchatHistories) global.webchatHistories = {};
+                                                const historyKey = `webchat_${ip}`;
+                                                if (!global.webchatHistories[historyKey]) global.webchatHistories[historyKey] = { history: [], thread_id: null };
+                                                const _store = global.webchatHistories[historyKey];
+                                                const _history = _store.history;
+                                                const state = {
+                                                    get: function (key) {
+                                                        if (key === 'history') return _history;
+                                                        if (key === 'thread_id') return _store.thread_id;
+                                                        return undefined;
+                                                    },
+                                                    setThreadId: function (id) {
+                                                        _store.thread_id = id;
+                                                    },
+                                                    update: async function (msg, role = 'user') {
+                                                        if (_history.length > 0) {
+                                                            const last = _history[_history.length - 1];
+                                                            if (last.role === role && last.content === msg) return;
+                                                        }
+                                                        _history.push({ role, content: msg });
+                                                        if (_history.length >= 6) {
+                                                            const last3 = _history.slice(-3);
+                                                            if (last3.every(h => h.role === 'user' && h.content === msg)) {
+                                                                _history.length = 0;
+                                                                _store.thread_id = null;
+                                                            }
+                                                        }
+                                                    },
+                                                    clear: async function () { _history.length = 0; _store.thread_id = null; }
+                                                };
+                                                const provider = undefined;
+                                                const gotoFlow = () => {};
+                                                let replyText = '';
+                                                const flowDynamic = async (arr) => {
+                                                    if (Array.isArray(arr)) {
+                                                        replyText = arr.map(a => a.body).join('\n');
+                                                    } else if (typeof arr === 'string') {
+                                                        replyText = arr;
+                                                    }
+                                                };
+                                                if (message.trim().toLowerCase() === "#reset" || message.trim().toLowerCase() === "#cerrar") {
+                                                    await state.clear();
+                                                    replyText = "🔄 El chat ha sido reiniciado. Puedes comenzar una nueva conversación.";
+                                                } else {
+                                                    // ...thread_id gestionado por openaiThreadBridge, no es necesario actualizar aquí...
+                                                }
+                                                res.setHeader('Content-Type', 'application/json');
+                                                res.end(JSON.stringify({ reply: replyText }));
+                                            } catch (err) {
+                                                console.error('Error en /webchat-api:', err); // debug
+                                                res.statusCode = 500;
+                                                res.end(JSON.stringify({ reply: 'Hubo un error procesando tu mensaje.' }));
+                                            }
+                                        });
+                                    }
+                                });
+
+            // No llamar a listen, BuilderBot ya inicia el servidor
+
+    // ...existing code...
     httpServer(+PORT);
 };
 
@@ -289,6 +537,7 @@ export {
     welcomeFlowTxt,
     welcomeFlowVoice,
     welcomeFlowImg,
+    welcomeFlowDoc,
     handleQueue,
     userQueues,
     userLocks,

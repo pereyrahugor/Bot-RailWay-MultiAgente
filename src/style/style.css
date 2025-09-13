@@ -1,0 +1,439 @@
+/* =========================
+   BASE + VARIABLES
+   ========================= */
+
+:root {
+    /* Alto de viewport dinámico:
+     - si JS setea --app-vh, se usa
+     - si no, cae a --vh (100dvh)
+     - último fallback: 100dvh */
+    --app-vh: 100dvh;
+    --vh: 100dvh;
+}
+
+/* iOS: evita auto-escalado de tipografías */
+html {
+    -webkit-text-size-adjust: 100%;
+}
+
+/* Box-sizing universal */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background: #ece5dd;
+    /* Usá el alto real del viewport (sin cortar el botón) */
+    min-height: var(--app-vh, 100dvh);
+    /* min-height: var(--app-vh, var(--vh, 100dvh)); */
+    /* Evita overflow horizontal por 100vw + scrollbars */
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    /* Mejor gesto tap en mobile (menos zoom fantasma) */
+    touch-action: manipulation;
+}
+
+/* =========================
+   LAYOUT
+   ========================= */
+
+#container {
+    display: flex;
+    flex-direction: column;
+    /* justify-content: flex-end; */
+    justify-content: space-between;
+    align-items: center;
+    /* Alto total disponible */
+    /* height: var(--app-vh, var(--vh, 100dvh)); */
+    min-height: var(--app-vh, 100dvh);
+    width: 100%;
+}
+
+#chat {
+    width: 100%;
+    max-width: 500px;
+    /* Oocupa resto de la columna */
+    flex: 1 1 auto;
+    min-height: 0;
+    /* Permite scroll en flex */
+    overflow-y: auto;
+    background-color: #efe6dd;
+    background-image: url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png");
+    background-repeat: repeat;
+    background-size: contain;
+    padding: 15px;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .2);
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    /* Momentum scroll en iOS */
+    -webkit-overflow-scrolling: touch;
+    /* Scrollbar (Firefox) */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, .15) transparent;
+}
+
+/* Scrollbar estilo WhatsApp (WebKit) */
+#chat::-webkit-scrollbar {
+    width: 6px;
+}
+
+#chat::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#chat::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, .15);
+    border-radius: 3px;
+}
+
+#chat::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(0, 0, 0, .3);
+}
+
+/* Fila inferior: siempre visible, sin desbordes */
+#inputRow {
+    position: sticky;
+    /* pega al fondo dentro del container */
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 500px;
+    margin: 0 auto;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    background: rgba(236, 229, 221, .85);
+    backdrop-filter: blur(3px);
+}
+
+/* =========================
+   CONTROLES
+   ========================= */
+
+#input,
+#send {
+    padding: 14px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 1.1em;
+}
+
+#input {
+    flex: 1 1 auto;
+    min-width: 0;
+    /* SUPER clave: evita que empuje al botón */
+    min-height: 45px;
+    max-height: 120px;
+
+    padding: 10px 14px;
+    border-radius: 50px;
+    border: 1px solid #fff;
+    background: #fff;
+
+    resize: none;
+    overflow-y: auto;
+
+    line-height: 1.4;
+    font-size: 16px;
+    /* anti-zoom iOS */
+    color: #111;
+
+    transition: none;
+}
+
+#input:focus {
+    border: 1px solid #fff;
+    outline: none;
+    box-shadow: none;
+}
+
+#input::placeholder {
+    color: #999;
+}
+
+/* Botón de envío con tamaño fijo dentro del flex */
+#send {
+    flex: 0 0 48px;
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+
+    background: #25d366;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#send:hover {
+    background: #128c7e;
+}
+
+#send::before {
+    content: "";
+    display: block;
+    width: 20px;
+    height: 20px;
+    background: url('https://www.iconpacks.net/icons/2/free-icon-send-4008.png') no-repeat center;
+    background-size: contain;
+}
+
+/* Tipografías de controles a 16px para evitar zoom en focus */
+input,
+textarea,
+select,
+button {
+    font-size: 16px;
+}
+
+/* =========================
+   BURBUJAS
+   ========================= */
+
+#chat .msg {
+    display: inline-block;
+    width: fit-content;
+    max-width: 78%;
+    padding: 9px 12px;
+    margin: 6px 0;
+    border-radius: 18px;
+    line-height: 1.35;
+    font-size: 15px;
+    word-break: break-word;
+    white-space: pre-wrap;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, .25);
+    color: #e9edef;
+}
+
+.bot {
+    background: #202c33;
+    margin-right: auto;
+    align-self: flex-start;
+    text-align: left;
+    border-top-left-radius: 6px;
+}
+
+.user {
+    background: #005c4b;
+    margin-left: auto;
+    align-self: flex-end;
+    text-align: left;
+    border-top-right-radius: 6px;
+}
+
+/* ======= HEADER estilo WhatsApp ======= */
+
+#header {
+    position: sticky;
+    /* se mantiene arriba al scrollear */
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 500px;
+    margin: 0 auto 0 auto;
+    background: linear-gradient(180deg, #075e54 0%, #0b645a 100%);
+    color: #fff;
+    /* padding con safe-area superior (notch) */
+    padding: calc(8px + env(safe-area-inset-top, 0px)) 10px 8px 8px;
+    border-radius: 8px 8px 0 0;
+    /* box-shadow: 0 2px 8px rgba(0, 0, 0, .18); */
+}
+
+/* Botón flecha */
+#backBtn {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    background: transparent;
+    color: #fff;
+    font-size: 22px;
+    /* ← */
+    line-height: 1;
+    border: none;
+    border-radius: 18px;
+    cursor: pointer;
+}
+
+#backBtn:active {
+    opacity: .8;
+}
+
+/* Avatar */
+#avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #e0f2f1;
+    /* fallback si no carga imagen */
+    flex: 0 0 auto;
+}
+
+/* Nombre y estado */
+#header .meta {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    /* para truncar correctamente */
+    flex: 1 1 auto;
+}
+
+#header .name {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: .2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#header .sub {
+    font-size: 12px;
+    opacity: .9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ======= Ajustes responsive para que no rompa nada ======= */
+
+/* Mobile ≤600px: header a ancho completo y sin bordes redondeados */
+@media (max-width: 600px) {
+    #header {
+        max-width: 100%;
+        border-radius: 0;
+        margin: 0 0 8px 0;
+        padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px 8px;
+    }
+}
+
+/* ≥768px: mantener coherencia con chat/inputRow */
+@media (min-width: 768px) {
+    #header {
+        max-width: 640px;
+    }
+}
+
+@media (min-width: 1200px) {
+    #header {
+        max-width: 720px;
+    }
+}
+
+
+/* =========================
+   RESPONSIVE
+   ========================= */
+
+/* Mobile ≤600px */
+@media (max-width: 600px) {
+
+    /* El container ya usa var(--app-vh); solo ajustamos spacing */
+    #container {
+        justify-content: space-between;
+    }
+
+    #chat {
+        max-width: 100%;
+        border-radius: 0;
+        padding: 14px;
+        background-size: 340px 340px;
+        margin: 0;
+    }
+
+    #chat .msg {
+        max-width: 88%;
+        font-size: 16px;
+        /* más legible */
+        line-height: 1.45;
+        padding: 10px 14px;
+    }
+
+    #inputRow {
+        max-width: 100%;
+        gap: 12px;
+        padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    }
+
+    #input {
+        min-height: 48px;
+        max-height: 120px;
+        font-size: 16px;
+        /* anti-zoom iOS */
+        line-height: 1.45;
+        padding: 12px 16px;
+    }
+
+    #send {
+        flex-basis: 52px;
+        width: 52px;
+        height: 52px;
+        min-width: 52px;
+        min-height: 52px;
+    }
+}
+
+/* Pantallas muy bajas en altura */
+@media (max-height: 560px) {
+
+    /* el flex se encarga del alto; evitamos fijar alturas que corten el botón */
+    #input {
+        max-height: 96px;
+    }
+}
+
+/* ≥768px */
+@media (min-width: 768px) {
+    #chat {
+        max-width: 640px;
+    }
+
+    #inputRow {
+        max-width: 640px;
+    }
+
+    #chat .msg {
+        max-width: 72%;
+    }
+}
+
+/* ≥1200px */
+@media (min-width: 1200px) {
+    #chat {
+        max-width: 720px;
+        background-size: 420px 420px;
+    }
+
+    #inputRow {
+        max-width: 720px;
+    }
+}
