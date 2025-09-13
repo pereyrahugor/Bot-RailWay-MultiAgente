@@ -30,8 +30,6 @@ COPY src/js/ ./src/js/
 COPY src/style/ ./src/style/
 COPY src/utils/ ./src/utils/
 COPY src/utils-web/ ./src/utils-web/
-COPY temp/ ./temp/
-COPY tmp/ ./tmp/
 COPY README.md ./
 COPY nodemon.json ./
 COPY railway.json ./
