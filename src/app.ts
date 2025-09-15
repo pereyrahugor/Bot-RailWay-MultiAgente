@@ -291,6 +291,7 @@ const main = async () => {
                 const polkaApp = adapterProvider.server;
                 polkaApp.use("/js", serve("src/js"));
                 polkaApp.use("/style", serve("src/style"));
+                polkaApp.use("/assets", serve("src/assets"));
                 // Agregar ruta personalizada para el webchat
                 polkaApp.get('/webchat', (req, res) => {
                     res.sendFile(path.join(__dirname, '../webchat.html'));

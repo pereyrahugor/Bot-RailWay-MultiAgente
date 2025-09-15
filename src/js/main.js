@@ -143,4 +143,18 @@ function addMessage(text, type) {
     div.innerText = text
     chat.appendChild(div)
     chat.scrollTop = chat.scrollHeight
+
+    // Reproducir sonido si es respuesta del bot
+    if (type === 'bot') {
+        let audio = document.getElementById('msgReceivedAudio');
+        if (!audio) {
+            audio = document.createElement('audio');
+            audio.id = 'msgReceivedAudio';
+            audio.src = 'assets/msgReceived.mp3';
+            audio.style.display = 'none';
+            document.body.appendChild(audio);
+        }
+        audio.currentTime = 0;
+        audio.play();
+    }
 }
