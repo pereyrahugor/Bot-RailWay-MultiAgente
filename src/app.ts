@@ -27,6 +27,7 @@ import { AssistantBridge } from './utils-web/AssistantBridge';
 import { WebChatManager } from './utils-web/WebChatManager';
 import { WebChatSession } from './utils-web/WebChatSession';
 import { fileURLToPath } from 'url';
+import { RailwayApi } from "./Api-RailWay/Railway";
 
 // Definir __dirname para ES modules
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -279,7 +280,7 @@ const main = async () => {
                     version: [2, 3000, 1027934701],
                     groupsIgnore: false,
                     readStatus: false,
-                });
+                });
                 const adapterDB = new MemoryDB();
                 const { httpServer } = await createBot({
                     flow: adapterFlow,
@@ -293,10 +294,52 @@ const main = async () => {
                 polkaApp.use("/js", serve("src/js"));
                 polkaApp.use("/style", serve("src/style"));
                 polkaApp.use("/assets", serve("src/assets"));
-                // Agregar ruta personalizada para el webchat
-                polkaApp.get('/webchat', (req, res) => {
-                    res.sendFile(path.join(__dirname, '../webchat.html'));
-                });
+                
+                // Utilidad para servir páginas HTML estáticas
+                                function serveHtmlPage(route, filename) {
+                                    polkaApp.get(route, (req, res) => {
+                                        res.setHeader("Content-Type", "text/html");
+                                        // Buscar primero en src/ (local), luego en /app/src/ (deploy)
+                                        let htmlPath = path.join(__dirname, filename);
+                                        if (!fs.existsSync(htmlPath)) {
+                                            // Buscar en /app/src/ (deploy)
+                                            htmlPath = path.join(process.cwd(), 'src', filename);
+                                        }
+                                        try {
+                                            res.end(fs.readFileSync(htmlPath));
+                                        } catch (err) {
+                                            res.statusCode = 404;
+                                            res.end('HTML no encontrado');
+                                        }
+                                    });
+                                }
+
+                                // Registrar páginas HTML
+                                serveHtmlPage("/webchat", "webchat.html");
+                                serveHtmlPage("/webreset", "webreset.html");
+
+                                  // Endpoint para reiniciar el bot vía Railway
+  polkaApp.post("/api/restart-bot", async (req, res) => {
+  console.log('POST /api/restart-bot recibido');
+  try {
+    const result = await RailwayApi.restartActiveDeployment();
+    console.log('Resultado de restartRailwayDeployment:', result);
+    if (result.success) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        success: true,
+        message: "Reinicio solicitado correctamente."
+      }));
+    } else {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: result.error || "Error desconocido" }));
+    }
+  } catch (err: any) {
+    console.error('Error en /api/restart-bot:', err);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: false, error: err.message }));
+  }
+});
 
                 // Obtener el servidor HTTP real de BuilderBot después de httpInject
                 const realHttpServer = adapterProvider.server.server;
