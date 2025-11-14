@@ -1,5 +1,5 @@
 import { EVENTS } from "@builderbot/bot";
-import { BaileysProvider } from "@builderbot/provider-baileys";
+import { BaileysProvider } from "builderbot-provider-sherpa";
 
 class ErrorReporter {
     private provider: BaileysProvider;

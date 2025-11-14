@@ -1,32 +1,10 @@
-"use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
+import * as constants from './constants.js';
+import { jidDecode } from './jid-utils.js';
+export const encodeBinaryNode = (node, opts = constants, buffer = [0]) => {
+    const encoded = encodeBinaryNodeInner(node, opts, buffer);
+    return Buffer.from(encoded);
 };
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.encodeBinaryNode = void 0;
-const constants = __importStar(require("./constants"));
-const jid_utils_1 = require("./jid-utils");
-const encodeBinaryNode = ({ tag, attrs, content }, opts = constants, buffer = [0]) => {
+const encodeBinaryNodeInner = ({ tag, attrs, content }, opts, buffer) => {
     const { TAGS, TOKEN_MAP } = opts;
     const pushByte = (value) => buffer.push(value & 0xff);
     const pushInt = (value, n, littleEndian = false) => {
@@ -35,11 +13,15 @@ const encodeBinaryNode = ({ tag, attrs, content }, opts = constants, buffer = [0
             buffer.push((value >> (curShift * 8)) & 0xff);
         }
     };
-    const pushBytes = (bytes) => (bytes.forEach(b => buffer.push(b)));
+    const pushBytes = (bytes) => {
+        for (const b of bytes) {
+            buffer.push(b);
+        }
+    };
     const pushInt16 = (value) => {
         pushBytes([(value >> 8) & 0xff, value & 0xff]);
     };
-    const pushInt20 = (value) => (pushBytes([(value >> 16) & 0x0f, (value >> 8) & 0xff, value & 0xff]));
+    const pushInt20 = (value) => pushBytes([(value >> 16) & 0x0f, (value >> 8) & 0xff, value & 0xff]);
     const writeByteLength = (length) => {
         if (length >= 4294967296) {
             throw new Error('string too large to encode: ' + length);
@@ -134,11 +116,10 @@ const encodeBinaryNode = ({ tag, attrs, content }, opts = constants, buffer = [0
         }
     };
     const isNibble = (str) => {
-        if (str.length > TAGS.PACKED_MAX) {
+        if (!str || str.length > TAGS.PACKED_MAX) {
             return false;
         }
-        for (let i = 0; i < str.length; i++) {
-            const char = str[i];
+        for (const char of str) {
             const isInNibbleRange = char >= '0' && char <= '9';
             if (!isInNibbleRange && char !== '-' && char !== '.') {
                 return false;
@@ -147,19 +128,22 @@ const encodeBinaryNode = ({ tag, attrs, content }, opts = constants, buffer = [0
         return true;
     };
     const isHex = (str) => {
-        if (str.length > TAGS.PACKED_MAX) {
+        if (!str || str.length > TAGS.PACKED_MAX) {
             return false;
         }
-        for (let i = 0; i < str.length; i++) {
-            const char = str[i];
+        for (const char of str) {
             const isInNibbleRange = char >= '0' && char <= '9';
-            if (!isInNibbleRange && !(char >= 'A' && char <= 'F') && !(char >= 'a' && char <= 'f')) {
+            if (!isInNibbleRange && !(char >= 'A' && char <= 'F')) {
                 return false;
             }
         }
         return true;
     };
     const writeString = (str) => {
+        if (str === undefined || str === null) {
+            pushByte(TAGS.LIST_EMPTY);
+            return;
+        }
         const tokenIndex = TOKEN_MAP[str];
         if (tokenIndex) {
             if (typeof tokenIndex.dict === 'number') {
@@ -174,7 +158,7 @@ const encodeBinaryNode = ({ tag, attrs, content }, opts = constants, buffer = [0
             writePackedBytes(str, 'hex');
         }
         else if (str) {
-            const decodedJid = (0, jid_utils_1.jidDecode)(str);
+            const decodedJid = jidDecode(str);
             if (decodedJid) {
                 writeJid(decodedJid);
             }
@@ -195,7 +179,10 @@ const encodeBinaryNode = ({ tag, attrs, content }, opts = constants, buffer = [0
             pushInt16(listSize);
         }
     };
-    const validAttributes = Object.keys(attrs).filter(k => (typeof attrs[k] !== 'undefined' && attrs[k] !== null));
+    if (!tag) {
+        throw new Error('Invalid node: tag cannot be undefined');
+    }
+    const validAttributes = Object.keys(attrs || {}).filter(k => typeof attrs[k] !== 'undefined' && attrs[k] !== null);
     writeListStart(2 * validAttributes.length + 1 + (typeof content !== 'undefined' ? 1 : 0));
     writeString(tag);
     for (const key of validAttributes) {
@@ -212,9 +199,10 @@ const encodeBinaryNode = ({ tag, attrs, content }, opts = constants, buffer = [0
         pushBytes(content);
     }
     else if (Array.isArray(content)) {
-        writeListStart(content.length);
-        for (const item of content) {
-            (0, exports.encodeBinaryNode)(item, opts, buffer);
+        const validContent = content.filter(item => item && (item.tag || Buffer.isBuffer(item) || item instanceof Uint8Array || typeof item === 'string'));
+        writeListStart(validContent.length);
+        for (const item of validContent) {
+            encodeBinaryNodeInner(item, opts, buffer);
         }
     }
     else if (typeof content === 'undefined') {
@@ -223,6 +211,6 @@ const encodeBinaryNode = ({ tag, attrs, content }, opts = constants, buffer = [0
     else {
         throw new Error(`invalid children for header "${tag}": ${content} (${typeof content})`);
     }
-    return Buffer.from(buffer);
+    return buffer;
 };
-exports.encodeBinaryNode = encodeBinaryNode;
+//# sourceMappingURL=encode.js.map
