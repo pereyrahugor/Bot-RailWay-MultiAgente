@@ -1,8 +1,7 @@
 // Clase para manejar la lógica de reconexión cuando el campo nombre está vacío
 import { toAsk } from '@builderbot-plugins/openai-assistants';
-import { extraerDatosResumen } from '~/utils/extractJsonData';
-import { ResumenData } from '~/utils/googleSheetsResumen';
-import { analizarDestinoRecepcionista, ASSISTANT_MAP } from "../app";
+import { extraerDatosResumen, GenericResumenData } from '~/utils/extractJsonData';
+import { analizarDestinoRecepcionista, ASSISTANT_MAP, userAssignedAssistant } from "../app";
 
 // Opciones para configurar el flujo de reconexión
 interface ReconectionOptions {
@@ -11,7 +10,7 @@ interface ReconectionOptions {
     provider: any; // Proveedor de mensajería
     maxAttempts?: number; // Máximo de intentos de reconexión
     timeoutMs?: number; // Tiempo de espera entre intentos (ms)
-    onSuccess: (data: ResumenData) => Promise<void>; // Callback si se obtiene el nombre
+    onSuccess: (data: GenericResumenData) => Promise<void>; // Callback si se obtiene el nombre
     onFail: () => Promise<void>; // Callback si se alcanzan los intentos máximos
 }
 
@@ -23,7 +22,7 @@ export class ReconectionFlow {
     private readonly ctx: any; // Contexto del usuario
     private readonly state: any; // Estado de la conversación
     private readonly provider: any; // Proveedor de mensajería
-    private readonly onSuccess: (data: ResumenData) => Promise<void>; // Acción al obtener nombre
+    private readonly onSuccess: (data: GenericResumenData) => Promise<void>; // Acción al obtener nombre
     private readonly onFail: () => Promise<void>; // Acción al fallar todos los intentos
 
     constructor(options: ReconectionOptions) {
@@ -99,17 +98,17 @@ export class ReconectionFlow {
                 // Limpiar el estado de reconexión al éxito
                 if (this.state) delete this.state.reconectionFlow;
                 // Determinar el asistente destino según la lógica multiagente
-                const asistenteEnUso = ASSISTANT_MAP['asistente1'];
+                const asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(this.ctx.from) || 'asistente1'];
                 const resumen = await toAsk(asistenteEnUso, "GET_RESUMEN", this.state);
-                const data: ResumenData = extraerDatosResumen(resumen);
+                const data: GenericResumenData = extraerDatosResumen(resumen);
                 await this.onSuccess(data);
                 return;
             }
 
-            // Si no respondió, intentar obtener el resumen nuevamente desde el asistente
-            const asistenteEnUso = ASSISTANT_MAP['asistente1'];
+            // Si no respondió, intentar obtener el resumen nuevamente desde el asistente asignado
+            const asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(this.ctx.from) || 'asistente1'];
             const resumen = await toAsk(asistenteEnUso, "GET_RESUMEN", this.state);
-            const data: ResumenData = extraerDatosResumen(resumen);
+            const data: GenericResumenData = extraerDatosResumen(resumen);
             const nombreInvalido = !data.nombre || data.nombre.trim() === "" ||
                 data.nombre.trim() === "- Nombre:" ||
                 data.nombre.trim() === "- Interés:" ||
@@ -148,11 +147,11 @@ export class ReconectionFlow {
                 ) {
                     return;
                 }
-                // Enviar el mensaje recibido al asistente como "hola, [msj]"
+                // Enviar el mensaje recibido al asistente asignado como "hola, [msj]"
                 const userMsg = msg.body;
                 const prompt = `hola, ${userMsg}`;
                 try {
-                    const asistenteEnUso = ASSISTANT_MAP['asistente1'];
+                    const asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(this.ctx.from) || 'asistente1'];
                     await toAsk(asistenteEnUso, prompt, this.state);
                 } catch (err) {
                     console.error('[ReconectionFlow] Error enviando mensaje al asistente:', err);

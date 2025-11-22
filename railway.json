@@ -1,22 +1,147 @@
 {
-  "name": "Bot WhatsApp Multiagente BuilderBot",
-  "description": "Bot de WhatsApp multiagente con integración OpenAI, derivación inteligente y soporte para múltiples asistentes.",
-  "plugins": ["docker"],
+  "name": "Bot WhatsApp BuilderBot",
+  "description": "Bot de WhatsApp con integración OpenAI, multiagente y soporte de comandos",
+  "plugins": [
+    "docker"
+  ],
   "envs": [
-    { "key": "ASSISTANT_1", "name": "ID Asistente Recepcionista", "required": true },
-    { "key": "ASSISTANT_2", "name": "ID Asistente Vendedor Tango", "required": false },
-    { "key": "ASSISTANT_3", "name": "ID Asistente Vendedor Cámaras", "required": false },
-    { "key": "ASSISTANT_4", "name": "ID Asistente 4 (personalizable)", "required": false },
-    { "key": "ASSISTANT_5", "name": "ID Asistente 5 (personalizable)", "required": false },
-    { "key": "OPENAI_API_KEY", "name": "Clave API OpenAI", "required": true },
-    { "key": "ID_GRUPO_RESUMEN", "name": "ID del grupo de resumen", "required": false },
-    { "key": "PORT", "name": "Puerto de escucha", "required": false, "defaultValue": "3000" },
-    { "key": "msjCierre", "name": "Mensaje de cierre", "required": true },
-    { "key": "msjSeguimiento1", "name": "Mensaje de seguimiento 1", "required": true },
-    { "key": "msjSeguimiento2", "name": "Mensaje de seguimiento 2", "required": true },
-    { "key": "msjSeguimiento3", "name": "Mensaje de seguimiento 3", "required": true },
-    { "key": "timeOutCierre", "name": "Timeout de cierre (milisegundos)", "required": true },
-    { "key": "timeOutSeguimiento2", "name": "Timeout seguimiento 2 (minutos)", "required": true },
-    { "key": "timeOutSeguimiento3", "name": "Timeout seguimiento 3 (minutos)", "required": true }
+    {
+      "key": "ASSISTANT_ID",
+      "name": "Assistant ID",
+      "required": true
+    },
+    {
+      "key": "OPENAI_API_KEY",
+      "name": "Clave API OpenAI",
+      "required": true
+    },
+    {
+      "key": "ID_GRUPO_RESUMEN",
+      "name": "ID del grupo de resumen",
+      "required": true
+    },
+    {
+      "key": "ID_GRUPO_RESUMEN_2",
+      "name": "ID del grupo de resumen 2",
+      "required": true
+    },
+    {
+      "key": "PORT",
+      "name": "Puerto de escucha",
+      "required": false,
+      "defaultValue": "8080"
+    },
+    {
+      "key": "msjCierre",
+      "name": "Mensaje de cierre",
+      "required": true
+    },
+    {
+      "key": "msjSeguimiento1",
+      "name": "Mensaje de seguimiento 1",
+      "required": true
+    },
+    {
+      "key": "msjSeguimiento2",
+      "name": "Mensaje de seguimiento 2",
+      "required": true
+    },
+    {
+      "key": "msjSeguimiento3",
+      "name": "Mensaje de seguimiento 3",
+      "required": true
+    },
+    {
+      "key": "timeOutCierre",
+      "name": "Timeout de cierre (minutos)",
+      "required": true
+    },
+    {
+      "key": "timeOutSeguimiento2",
+      "name": "Timeout seguimiento 2 (minutos)",
+      "required": true
+    },
+    {
+      "key": "timeOutSeguimiento3",
+      "name": "Timeout seguimiento 3 (minutos)",
+      "required": true
+    },
+    {
+      "key": "ASSISTANT_ID_IMG",
+      "name": "Assistant ID para imágenes",
+      "required": true
+    },
+    {
+      "key": "OPENAI_API_KEY_IMG",
+      "name": "Clave API OpenAI para imágenes",
+      "required": true
+    },
+    {
+      "key": "ASSISTANT_NAME",
+      "name": "Nombre del asistente",
+      "required": false,
+      "defaultValue": "Asistente demo"
+    },
+    {
+      "key": "GOOGLE_CLIENT_EMAIL",
+      "name": "Google Client Email",
+      "required": true
+    },
+    {
+      "key": "GOOGLE_PRIVATE_KEY",
+      "name": "Google Private Key",
+      "required": true
+    },
+    {
+      "key": "SHEET_ID_RESUMEN",
+      "name": "ID de la hoja de resumen",
+      "required": true
+    },
+    {
+      "key": "GOOGLE_MAPS_API_KEY",
+      "name": "Clave API Google Maps",
+      "required": true
+    },
+    {
+      "key": "GOOGLE_CALENDAR_ID",
+      "name": "ID del Calendario de Google",
+      "required": false,
+      "defaultValue": "primary"
+    },
+    {
+      "key": "SHEET_ID_UPDATE",
+      "name": "IDs de Sheets para actualización",
+      "required": false
+    },
+    {
+      "key": "DOCX_ID_UPDATE",
+      "name": "IDs de Docs para actualización",
+      "required": false
+    },
+    {
+      "key": "VECTOR_STORE_ID",
+      "name": "ID del Vector Store OpenAI",
+      "required": false
+    },
+    {
+      "key": "RAILWAY_PROJECT_ID",
+      "name": "Railway Project ID",
+      "required": false
+    },
+    {
+      "key": "RAILWAY_TOKEN",
+      "name": "Railway Token",
+      "required": false
+    },
+    {
+      "key": "RAILWAY_SERVICE_ID",
+      "name": "Railway Service ID",
+      "required": false
+    },
+    {
+      "key": "RAILWAY_ENVIRONMENT_ID",
+      "name": "Railway Environment ID",
+      "required": false
+    }
   ]
 }

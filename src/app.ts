@@ -18,8 +18,7 @@ import { welcomeFlowVoice } from "./Flows/welcomeFlowVoice";
 import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
 import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
 //import { imgResponseFlow } from "./Flows/imgResponse";
-//import { getSheet2 } from "./addModule/getSheet2";
-//import { getSheet1 } from "./addModule/getSheet1";
+import { updateMain } from "./addModule/updateMain";
 //import { listImg } from "./addModule/listImg";
 import { ErrorReporter } from "./utils/errorReporter";
 //import { testAuth } from './utils/test-google-auth.js';
@@ -270,14 +269,14 @@ const main = async () => {
     // Actualizar listado de imágenes en vector store
     //await listImg();
 
-    // Paso 1: Inicializar datos desde Google Sheets
-    // ...existing code...
+    // Cargar todas las hojas principales con una sola función reutilizable
+    await updateMain();
 
 
                 // ...existing code...
                 const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowDoc, idleFlow]);
                 const adapterProvider = createProvider(BaileysProvider, {
-                    version: [2, 3000, 1033834674],
+                    version: [2, 3000, 1033834674],//Nueva para Revision 1030220586 - Funcional Actual 1033834674
                     groupsIgnore: false,
                     readStatus: false,
                 });
