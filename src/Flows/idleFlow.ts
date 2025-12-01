@@ -1,7 +1,7 @@
 import { addKeyword, EVENTS } from '@builderbot/bot';
 import { toAsk } from '@builderbot-plugins/openai-assistants';
 import { GenericResumenData, extraerDatosResumen } from '~/utils/extractJsonData';
-//import { addToSheet } from '~/utils/googleSheetsResumen';
+import { addToSheet } from '~/utils/googleSheetsResumen';
 import fs from 'fs';
 import path from 'path';
 import { ReconectionFlow } from './reconectionFlow';
@@ -58,7 +58,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                 // No seguimiento, no enviar resumen al grupo ws, envia resumen a sheet, envia msj de cierre
                 console.log('NO_REPORTAR_BAJA: No se realiza seguimiento ni se envía resumen al grupo.');
                 data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
-                //await addToSheet(data);
+                await addToSheet(data);
                 return endFlow();
             } else if (tipo === 'NO_REPORTAR_SEGUIR') {
                 // Solo este activa seguimiento
@@ -82,26 +82,11 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     },
                     onFail: async () => {
                         data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
-                        //await addToSheet(data);
+                        await addToSheet(data);
                     }
                 });
                 return await reconFlow.start();
                 // No cerrar el hilo aquí, dejar abierto para que el usuario pueda responder
-            } else if (tipo === 'SI_RESUMEN') {
-                // Solo envía resumen al grupo ws y sheets, no envia msj de cierre
-                console.log('SI_RESUMEN: Solo se envía resumen al grupo y sheets.');
-                data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
-                {
-                    const resumenConLink = `${resumen}\n\n🔗 [Chat del usuario](${data.linkWS})`;
-                    try {
-                        await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
-                        console.log(`✅ SI_RESUMEN: Resumen enviado a ${ID_GRUPO_RESUMEN} con enlace de WhatsApp`);
-                    } catch (err) {
-                        console.error(`❌ SI_RESUMEN: No se pudo enviar el resumen al grupo ${ID_GRUPO_RESUMEN}:`, err?.message || err);
-                    }
-                }
-                //await addToSheet(data);
-                return; // No enviar mensaje de cierre
             } else if (tipo === 'SI_RESUMEN_G2') {
                 // Solo envía resumen al grupo ws y sheets, no envia msj de cierre
                 console.log('SI_RESUMEN_G2: Solo se envía resumen al grupo y sheets.');
@@ -115,7 +100,22 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                         console.error(`❌ SI_RESUMEN_G2: No se pudo enviar el resumen al grupo ${ID_GRUPO_RESUMEN_2}:`, err?.message || err);
                     }
                 }
-                //await addToSheet(data);
+                await addToSheet(data);
+                return; // No enviar mensaje de cierre
+            } else if (tipo === 'SI_RESUMEN') {
+                // Solo envía resumen al grupo ws y sheets, no envia msj de cierre
+                console.log('SI_RESUMEN: Solo se envía resumen al grupo y sheets.');
+                data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
+                {
+                    const resumenConLink = `${resumen}\n\n🔗 [Chat del usuario](${data.linkWS})`;
+                    try {
+                        await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
+                        console.log(`✅ SI_RESUMEN: Resumen enviado a ${ID_GRUPO_RESUMEN} con enlace de WhatsApp`);
+                    } catch (err) {
+                        console.error(`❌ SI_RESUMEN: No se pudo enviar el resumen al grupo ${ID_GRUPO_RESUMEN}:`, err?.message || err);
+                    }
+                }
+                await addToSheet(data);
                 return; // No enviar mensaje de cierre
             } else {
                 // Si aparece otro tipo, se procede como SI_RESUMEN por defecto
@@ -130,7 +130,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                         console.error(`❌ DEFAULT: No se pudo enviar el resumen al grupo ${ID_GRUPO_RESUMEN}:`, err?.message || err);
                     }
                 }
-                //await addToSheet(data);
+                await addToSheet(data);
                 return; // No enviar mensaje de cierre
             }
         } catch (error) {
