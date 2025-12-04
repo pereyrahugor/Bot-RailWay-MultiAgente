@@ -52,7 +52,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
             // Log para depuración del valor real de tipo
             console.log('Valor de tipo:', JSON.stringify(data.tipo), '| Longitud:', data.tipo?.length);
             // Limpieza robusta de caracteres invisibles y espacios
-            const tipo = (data.tipo ?? '').replace(/[^A-Z_]/gi, '').toUpperCase();
+            const tipo = (data.tipo ?? '').replace(/[^A-Z0-9_]/gi, '').toUpperCase();
 
             if (tipo === 'NO_REPORTAR_BAJA') {
                 // No seguimiento, no enviar resumen al grupo ws, envia resumen a sheet, envia msj de cierre
