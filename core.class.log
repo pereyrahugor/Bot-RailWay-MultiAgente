@@ -1,0 +1,47 @@
+[handleMsg]:  {
+  key: {
+    remoteJid: '5491130792789@s.whatsapp.net',
+    fromMe: false,
+    id: '3EB0092E3C63BC1F2D3C29',
+    senderLid: '111274113388799@lid',
+    senderPn: '5491130792789:25@s.whatsapp.net',
+    participant: undefined,
+    participantPn: undefined,
+    participantLid: undefined,
+    recipientLid: undefined
+  },
+  category: undefined,
+  messageTimestamp: 1765294660,
+  pushName: 'Pereyra Hugo',
+  message: Message {
+    conversation: 'Hola',
+    messageContextInfo: MessageContextInfo {
+      threadId: [],
+      deviceListMetadata: [DeviceListMetadata],
+      deviceListMetadataVersion: 2,
+      messageSecret: [Uint8Array],
+      limitSharingV2: [LimitSharing]
+    }
+  },
+  body: 'Hola',
+  name: 'Pereyra Hugo',
+  from: '5491130792789',
+  host: '5491139189954'
+}
+[QUEUE_SE_ENVIO]:  {
+  ref: 'ans_5a98ed49-1304-4328-9b9a-0bd179653f74',
+  keyword: 'key_433a9ef5-12c4-428c-995e-5dda52d6a198',
+  answer: '__call_action__',
+  options: {
+    media: undefined,
+    buttons: [],
+    capture: false,
+    delay: 0,
+    idle: undefined,
+    ref: undefined,
+    nested: [],
+    keyword: {},
+    callback: true
+  },
+  refSerialize: '6fabfb0881aafd832cd9c98375270b87'
+}

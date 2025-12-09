@@ -276,7 +276,7 @@ const main = async () => {
                 // ...existing code...
                 const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowDoc, idleFlow]);
                 const adapterProvider = createProvider(BaileysProvider, {
-                    version: [2, 3000, 1033834674],//Nueva para Revision 1030220586 - Funcional Actual 1033834674
+                    version: [2, 3000, 1030817285],//Nueva para Revision 1030220586 - Funcional Actual 1033834674
                     groupsIgnore: false,
                     readStatus: false,
                 });
@@ -475,7 +475,7 @@ const main = async () => {
                                                         destino = analizarDestinoRecepcionista(reply); // por si hay doble derivación
                                                     }
                                                     // Limpiar la respuesta para el usuario
-                                                    let respuestaSinResumen = String(reply)
+                                                    const respuestaSinResumen = String(reply)
                                                         .replace(/GET_RESUMEN[\s\S]+/i, '')
                                                         .replace(/^derivar(?:ndo)? a (asistente\s*[1-5]|asesor humano)\.?$/gim, '')
                                                         .replace(/\[Enviando.*$/gim, '')
