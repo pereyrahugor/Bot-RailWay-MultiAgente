@@ -18,7 +18,7 @@ import { welcomeFlowTxt } from "./Flows/welcomeFlowTxt";
 import { welcomeFlowVoice } from "./Flows/welcomeFlowVoice";
 import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
 import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
-//import { imgResponseFlow } from "./Flows/imgResponse";
+import { AssistantResponseProcessor } from "./utils/AssistantResponseProcessor";
 import { updateMain } from "./addModule/updateMain";
 //import { listImg } from "./addModule/listImg";
 import { ErrorReporter } from "./utils/errorReporter";
@@ -197,7 +197,16 @@ const processUserMessage = async (
             userAssignedAssistant.set(ctx.from, destino);
             // Enviar respuesta limpia del asistente anterior (si hay)
             if (respuestaSinResumen) {
-                await flowDynamic([{ body: respuestaSinResumen }]);
+                await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
+                    respuestaSinResumen,
+                    ctx,
+                    flowDynamic,
+                    state,
+                    provider,
+                    gotoFlow,
+                    getAssistantResponse,
+                    ASSISTANT_MAP[assigned]
+                );
             }
             // Derivar y responder con el nuevo asistente
             const respuestaDestino = await getAssistantResponse(
@@ -207,18 +216,45 @@ const processUserMessage = async (
                 "Por favor, responde aunque sea brevemente.",
                 ctx.from
             );
-            await flowDynamic([{ body: String(respuestaDestino).trim() }]);
+            await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
+                String(respuestaDestino).trim(),
+                ctx,
+                flowDynamic,
+                state,
+                provider,
+                gotoFlow,
+                getAssistantResponse,
+                ASSISTANT_MAP[destino]
+            );
             return state;
         } else if (destino === 'ambiguous') {
             // No cambiar el asistente, solo mostrar respuesta
             if (respuestaSinResumen) {
-                await flowDynamic([{ body: respuestaSinResumen }]);
+                await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
+                    respuestaSinResumen,
+                    ctx,
+                    flowDynamic,
+                    state,
+                    provider,
+                    gotoFlow,
+                    getAssistantResponse,
+                    ASSISTANT_MAP[assigned]
+                );
             }
             return state;
         } else {
             // No hay derivación, mantener el asistente actual
             if (respuestaSinResumen) {
-                await flowDynamic([{ body: respuestaSinResumen }]);
+                await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
+                    respuestaSinResumen,
+                    ctx,
+                    flowDynamic,
+                    state,
+                    provider,
+                    gotoFlow,
+                    getAssistantResponse,
+                    ASSISTANT_MAP[assigned]
+                );
             }
             return state;
         }
