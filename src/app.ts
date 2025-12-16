@@ -10,6 +10,7 @@ import "dotenv/config";
 import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@builderbot/bot";
 import { MemoryDB } from "@builderbot/bot";
 import { BaileysProvider } from "builderbot-provider-sherpa";
+import { restoreSessionFromDb, startSessionSync } from "./utils/sessionSync";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
 import { idleFlow } from "./Flows/idleFlow";
@@ -46,12 +47,8 @@ const userLocks = new Map();
 // Mapa para persistir el asistente asignado a cada usuario
 const userAssignedAssistant = new Map();
 
-const adapterProvider = createProvider(BaileysProvider, {
-    groupsIgnore: false,
-    readStatus: false,
-});
-
-const errorReporter = new ErrorReporter(adapterProvider, ID_GRUPO_RESUMEN); // Reemplaza YOUR_GROUP_ID con el ID del grupo de WhatsApp
+let adapterProvider;
+let errorReporter;
 
 const TIMEOUT_MS = 40000;
 
@@ -263,6 +260,8 @@ const handleQueue = async (userId) => {
 
 // Main function to initialize the bot and load Google Sheets data
 const main = async () => {
+    await restoreSessionFromDb();
+
     // Verificar credenciales de Google Sheets al iniciar
     //await testAuth();
 
@@ -275,17 +274,24 @@ const main = async () => {
 
                 // ...existing code...
                 const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowDoc, idleFlow]);
-                const adapterProvider = createProvider(BaileysProvider, {
-                    version: [2, 3000, 1030817285],//Nueva para Revision 1030220586 - Funcional Actual 1033834674
+                const adapterDB = new MemoryDB();
+                adapterProvider = createProvider(BaileysProvider, {
+                    version: [2, 3000, 1030817285],
                     groupsIgnore: false,
                     readStatus: false,
+                    disableHttpServer: true,
                 });
-                const adapterDB = new MemoryDB();
+
+                errorReporter = new ErrorReporter(adapterProvider, ID_GRUPO_RESUMEN);
+
                 const { httpServer } = await createBot({
                     flow: adapterFlow,
                     provider: adapterProvider,
                     database: adapterDB,
                 });
+
+                startSessionSync();
+
                 httpInject(adapterProvider.server);
 
                 // Usar la instancia Polka (adapterProvider.server) para rutas
