@@ -17,15 +17,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   si.addEventListener('click', async () => {
     modal.classList.add('hidden');
-    console.log('Botón SI presionado, enviando fetch a /api/restart-bot');
     try {
+      // 1. Borrar sesión en Supabase
+      const delRes = await fetch('/api/delete-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const delData = await delRes.json();
+      if (!delData.success) {
+        alert('Error al borrar la sesión: ' + (delData.error || 'Error desconocido'));       
+        return;
+      }
+      // 2. Reiniciar bot en Railway
       const res = await fetch('/api/restart-bot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-      console.log('Respuesta recibida de /api/restart-bot:', res);
       const data = await res.json();
-      console.log('Body de respuesta:', data);
       if (data.success) {
         // Mostrar mensaje y contador regresivo en la página
         let countdown = 45;
@@ -46,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('Error al solicitar reinicio: ' + (data.error || 'Error desconocido'));
       }
     } catch (err) {
-      console.error('Error en fetch /api/restart-bot:', err);
+      console.error('Error en el proceso de reinicio:', err);
       alert('Error de red o servidor: ' + err.message);
     }
   });

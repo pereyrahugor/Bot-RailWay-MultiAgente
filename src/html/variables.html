@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Editar Variables</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/style/variables.css">
+</head>
+<body>
+    <div class="container">
+        <h1>⚙️ Editar Variables de Entorno</h1>
+        <p>Modifica los parámetros de configuración del bot. Estos cambios se aplicarán en Railway.</p>
+        
+        <form id="variables-form">
+            <!-- Grupo 1: OpenAI -->
+            <div class="section-header">
+                <h2>🤖 Configuración OpenAI</h2>
+            </div>
+            <div class="variables-grid">
+                <div class="variable-group">
+                    <h3>ASSISTANT_NAME</h3>
+                    <p class="description">Nombre público que usará el asistente.</p>
+                    <input type="text" name="ASSISTANT_NAME" id="ASSISTANT_NAME">
+                </div>
+                <div class="variable-group">
+                    <h3>ASSISTANT_ID</h3>
+                    <p class="description">ID del asistente principal en OpenAI.</p>
+                    <input type="text" name="ASSISTANT_ID" id="ASSISTANT_ID">
+                </div>
+                <div class="variable-group">
+                    <h3>ASSISTANT_ID_IMG</h3>
+                    <p class="description">ID del asistente para procesamiento de imágenes.</p>
+                    <input type="text" name="ASSISTANT_ID_IMG" id="ASSISTANT_ID_IMG">
+                </div>
+                <div class="variable-group">
+                    <h3>OPENAI_API_KEY</h3>
+                    <p class="description">Clave de API de OpenAI principal.</p>
+                    <div class="input-wrapper">
+                        <input type="password" name="OPENAI_API_KEY" id="OPENAI_API_KEY">
+                        <button type="button" class="toggle-password" title="Mostrar/Ocultar">👁️</button>
+                    </div>
+                </div>
+                <div class="variable-group">
+                    <h3>OPENAI_API_KEY_IMG</h3>
+                    <p class="description">Clave de API de OpenAI para imágenes.</p>
+                    <div class="input-wrapper">
+                        <input type="password" name="OPENAI_API_KEY_IMG" id="OPENAI_API_KEY_IMG">
+                        <button type="button" class="toggle-password" title="Mostrar/Ocultar">👁️</button>
+                    </div>
+                </div>
+                <div class="variable-group">
+                    <h3>ID_GRUPO_RESUMEN</h3>
+                    <p class="description">ID del grupo principal para reportes de ventas.</p>
+                    <input type="text" name="ID_GRUPO_RESUMEN" id="ID_GRUPO_RESUMEN">
+                </div>
+                <div class="variable-group">
+                    <h3>ID_GRUPO_RESUMEN_2</h3>
+                    <p class="description">ID del segundo grupo para reportes de ventas.</p>
+                    <input type="text" name="ID_GRUPO_RESUMEN_2" id="ID_GRUPO_RESUMEN_2">
+                </div>
+            </div>
+
+            <!-- Grupo 2: Mensajes y Cierre -->
+            <div class="section-header">
+                <h2>💬 Mensajes y Tiempos de Cierre</h2>
+            </div>
+            <div class="variables-grid">
+                <div class="variable-group">
+                    <h3>MSJCIERRE</h3>
+                    <p class="description">Mensaje de despedida por inactividad.</p>
+                    <textarea name="msjCierre" id="msjCierre"></textarea>
+                </div>
+                <div class="variable-group">
+                    <h3>TIMEOUTCIERRE</h3>
+                    <p class="description">Tiempo (min) para cerrar por inactividad.</p>
+                    <input type="number" name="timeOutCierre" id="timeOutCierre">
+                </div>
+                <div class="variable-group">
+                    <h3>MSJSEGUIMIENTO1</h3>
+                    <p class="description">Primer mensaje de seguimiento.</p>
+                    <textarea name="msjSeguimiento1" id="msjSeguimiento1"></textarea>
+                </div>
+                <div class="variable-group">
+                    <h3>MSJSEGUIMIENTO2</h3>
+                    <p class="description">Segundo mensaje de seguimiento.</p>
+                    <textarea name="msjSeguimiento2" id="msjSeguimiento2"></textarea>
+                </div>
+                <div class="variable-group">
+                    <h3>TIMEOUTSEGUIMIENTO2</h3>
+                    <p class="description">Tiempo (min) para el segundo seguimiento.</p>
+                    <input type="number" name="timeOutSeguimiento2" id="timeOutSeguimiento2">
+                </div>
+                <div class="variable-group">
+                    <h3>MSJSEGUIMIENTO3</h3>
+                    <p class="description">Tercer mensaje de seguimiento.</p>
+                    <textarea name="msjSeguimiento3" id="msjSeguimiento3"></textarea>
+                </div>
+                <div class="variable-group">
+                    <h3>TIMEOUTSEGUIMIENTO3</h3>
+                    <p class="description">Tiempo (min) para el tercer seguimiento.</p>
+                    <input type="number" name="timeOutSeguimiento3" id="timeOutSeguimiento3">
+                </div>
+            </div>
+
+            <!-- Grupo 3: Google -->
+            <div class="section-header">
+                <h2>🌐 Servicios de Google</h2>
+            </div>
+            <div class="variables-grid">
+                <div class="variable-group">
+                    <h3>GOOGLE_CLIENT_EMAIL</h3>
+                    <p class="description">Email de la cuenta de servicio.</p>
+                    <input type="text" name="GOOGLE_CLIENT_EMAIL" id="GOOGLE_CLIENT_EMAIL">
+                </div>
+                <div class="variable-group">
+                    <h3>GOOGLE_PRIVATE_KEY</h3>
+                    <p class="description">Clave privada (formato JSON string).</p>
+                    <div class="input-wrapper">
+                        <textarea name="GOOGLE_PRIVATE_KEY" id="GOOGLE_PRIVATE_KEY" class="hidden-content"></textarea>
+                        <button type="button" class="toggle-password" title="Mostrar/Ocultar">👁️</button>
+                    </div>
+                </div>
+                <div class="variable-group">
+                    <h3>GOOGLE_MAPS_API_KEY</h3>
+                    <p class="description">API Key para Google Maps.</p>
+                    <div class="input-wrapper">
+                        <input type="password" name="GOOGLE_MAPS_API_KEY" id="GOOGLE_MAPS_API_KEY">
+                        <button type="button" class="toggle-password" title="Mostrar/Ocultar">👁️</button>
+                    </div>
+                </div>
+                <div class="variable-group">
+                    <h3>GOOGLE_CALENDAR_ID</h3>
+                    <p class="description">ID del calendario de Google.</p>
+                    <input type="text" name="GOOGLE_CALENDAR_ID" id="GOOGLE_CALENDAR_ID">
+                </div>
+                <div class="variable-group">
+                    <h3>SHEET_ID_UPDATE</h3>
+                    <p class="description">ID de la hoja de cálculo para actualizaciones.</p>
+                    <input type="text" name="SHEET_ID_UPDATE" id="SHEET_ID_UPDATE">
+                </div>
+                <div class="variable-group">
+                    <h3>SHEET_ID_RESUMEN</h3>
+                    <p class="description">ID de la hoja de cálculo para resúmenes.</p>
+                    <input type="text" name="SHEET_ID_RESUMEN" id="SHEET_ID_RESUMEN">
+                </div>
+                <div class="variable-group">
+                    <h3>DOCX_ID_UPDATE</h3>
+                    <p class="description">ID del documento para actualizaciones.</p>
+                    <input type="text" name="DOCX_ID_UPDATE" id="DOCX_ID_UPDATE">
+                </div>
+                <div class="variable-group">
+                    <h3>VECTOR_STORE_ID</h3>
+                    <p class="description">ID del Vector Store de OpenAI.</p>
+                    <input type="text" name="VECTOR_STORE_ID" id="VECTOR_STORE_ID">
+                </div>
+            </div>
+
+            <!-- Grupo 4: Supabase -->
+            <div class="section-header">
+                <h2>⚡ Supabase</h2>
+            </div>
+            <div class="variables-grid">
+                <div class="variable-group">
+                    <h3>SUPABASE_URL</h3>
+                    <p class="description">URL del proyecto Supabase.</p>
+                    <div class="input-wrapper">
+                        <input type="password" name="SUPABASE_URL" id="SUPABASE_URL">
+                        <button type="button" class="toggle-password" title="Mostrar/Ocultar">👁️</button>
+                    </div>
+                </div>
+                <div class="variable-group">
+                    <h3>SUPABASE_KEY</h3>
+                    <p class="description">Service Role Key de Supabase.</p>
+                    <div class="input-wrapper">
+                        <input type="password" name="SUPABASE_KEY" id="SUPABASE_KEY">
+                        <button type="button" class="toggle-password" title="Mostrar/Ocultar">👁️</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Railway Config (Ocultas) -->
+            <div class="variable-group" hidden>
+                <div class="input-wrapper">
+                    <input type="password" name="RAILWAY_TOKEN" id="RAILWAY_TOKEN">
+                </div>
+                <input type="text" name="RAILWAY_PROJECT_ID" id="RAILWAY_PROJECT_ID">
+                <input type="text" name="RAILWAY_ENVIRONMENT_ID" id="RAILWAY_ENVIRONMENT_ID">
+                <input type="text" name="RAILWAY_SERVICE_ID" id="RAILWAY_SERVICE_ID">
+            </div>
+
+            <div class="actions">
+                <button type="button" id="cancel-btn" class="btn btn-secondary">Cancelar</button>
+                <button type="submit" id="update-btn" class="btn">Actualizar y Reiniciar</button>
+            </div>
+        </form>
+    </div>
+    <script src="/js/variables.js"></script>
+</body>
+</html>

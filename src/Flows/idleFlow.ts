@@ -96,6 +96,15 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     try {
                         await provider.sendText(ID_GRUPO_RESUMEN_2, resumenConLink);
                         console.log(`✅ SI_RESUMEN_G2: Resumen enviado a ${ID_GRUPO_RESUMEN_2} con enlace de WhatsApp`);
+                        
+                        // Forward image if "Foto o video" is "si"
+                        if (data["Foto o video"]?.toLowerCase() === 'si') {
+                            const lastImage = state.get('lastImage');
+                            if (lastImage) {
+                                await provider.sendFile(ID_GRUPO_RESUMEN_2, lastImage);
+                                console.log(`✅ Imagen reenviada al grupo ${ID_GRUPO_RESUMEN_2}`);
+                            }
+                        }
                     } catch (err) {
                         console.error(`❌ SI_RESUMEN_G2: No se pudo enviar el resumen al grupo ${ID_GRUPO_RESUMEN_2}:`, err?.message || err);
                     }
@@ -111,6 +120,15 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     try {
                         await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
                         console.log(`✅ SI_RESUMEN: Resumen enviado a ${ID_GRUPO_RESUMEN} con enlace de WhatsApp`);
+
+                        // Forward image if "Foto o video" is "si"
+                        if (data["Foto o video"]?.toLowerCase() === 'si') {
+                            const lastImage = state.get('lastImage');
+                            if (lastImage) {
+                                await provider.sendFile(ID_GRUPO_RESUMEN, lastImage);
+                                console.log(`✅ Imagen reenviada al grupo ${ID_GRUPO_RESUMEN}`);
+                            }
+                        }
                     } catch (err) {
                         console.error(`❌ SI_RESUMEN: No se pudo enviar el resumen al grupo ${ID_GRUPO_RESUMEN}:`, err?.message || err);
                     }
@@ -126,6 +144,15 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                     try {
                         await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
                         console.log(`✅ DEFAULT: Resumen enviado a ${ID_GRUPO_RESUMEN} con enlace de WhatsApp`);
+
+                        // Forward image if "Foto o video" is "si"
+                        if (data["Foto o video"]?.toLowerCase() === 'si') {
+                            const lastImage = state.get('lastImage');
+                            if (lastImage) {
+                                await provider.sendFile(ID_GRUPO_RESUMEN, lastImage);
+                                console.log(`✅ Imagen reenviada al grupo ${ID_GRUPO_RESUMEN}`);
+                            }
+                        }
                     } catch (err) {
                         console.error(`❌ DEFAULT: No se pudo enviar el resumen al grupo ${ID_GRUPO_RESUMEN}:`, err?.message || err);
                     }

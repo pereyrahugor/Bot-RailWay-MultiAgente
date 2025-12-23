@@ -26,6 +26,7 @@ RUN pnpm install
 # Copiar el resto del código fuente y carpetas necesarias antes del build
 COPY src/ ./src/
 COPY src/assets/ ./src/assets/
+COPY src/html/ ./src/html/
 COPY src/js/ ./src/js/
 COPY src/style/ ./src/style/
 COPY src/utils/ ./src/utils/
@@ -57,11 +58,10 @@ RUN mkdir -p /app/credentials
 
 # Copiar los artefactos necesarios desde builder
 COPY --from=builder /app/src/assets ./src/assets
+COPY --from=builder /app/src/html ./src/html
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/*.json ./
 COPY --from=builder /app/*-lock.yaml ./
-COPY --from=builder /app/src/webchat.html ./src/webchat.html
-COPY --from=builder /app/src/webreset.html ./src/webreset.html
 COPY --from=builder /app/README.md ./
 COPY --from=builder /app/nodemon.json ./
 COPY --from=builder /app/railway.json ./

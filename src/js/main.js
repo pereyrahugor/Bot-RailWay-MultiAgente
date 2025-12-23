@@ -1,3 +1,14 @@
+// Obtener el nombre del asistente dinámicamente y actualizar el div
+window.addEventListener('DOMContentLoaded', function() {
+    fetch('/api/assistant-name')
+        .then(res => res.json())
+        .then(data => {
+            var el = document.getElementById('assistantName');
+            if (el && data.name) {
+                el.textContent = data.name;
+            }
+        });
+});
 const textarea = document.getElementById('input')
 const input = document.getElementById('input')
 const sendBtn = document.getElementById('send')

@@ -4,13 +4,14 @@ import path from 'path';
 import serve from 'serve-static';
 import { Server } from 'socket.io';
 import fs from 'fs';
+import bodyParser from 'body-parser';
+import QRCode from 'qrcode';
 // Estado global para encender/apagar el bot
-//let botEnabled = true;
 import "dotenv/config";
 import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@builderbot/bot";
 import { MemoryDB } from "@builderbot/bot";
 import { BaileysProvider } from "builderbot-provider-sherpa";
-import { restoreSessionFromDb, startSessionSync } from "./utils/sessionSync";
+import { restoreSessionFromDb, startSessionSync, deleteSessionFromDb } from "./utils/sessionSync";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
 import { idleFlow } from "./Flows/idleFlow";
@@ -18,6 +19,7 @@ import { welcomeFlowTxt } from "./Flows/welcomeFlowTxt";
 import { welcomeFlowVoice } from "./Flows/welcomeFlowVoice";
 import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
 import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
+import { locationFlow } from "./Flows/locationFlow";
 import { AssistantResponseProcessor } from "./utils/AssistantResponseProcessor";
 import { updateMain } from "./addModule/updateMain";
 //import { listImg } from "./addModule/listImg";
@@ -28,6 +30,7 @@ import { WebChatManager } from './utils-web/WebChatManager';
 import { WebChatSession } from './utils-web/WebChatSession';
 import { fileURLToPath } from 'url';
 import { RailwayApi } from "./Api-RailWay/Railway";
+import { getArgentinaDatetimeString } from "./utils/ArgentinaTime";
 
 // Definir __dirname para ES modules
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,8 +64,7 @@ const userRetryCount = new Map();
 export const getAssistantResponse = async (assistantId, message, state, fallbackMessage, userId, thread_id = null) => {
     // Si es un nuevo hilo, envía primero la fecha y hora actual
     if (!thread_id) {
-        const moment = (await import('moment')).default;
-        const fechaHoraActual = moment().format('YYYY-MM-DD HH:mm');
+        const fechaHoraActual = getArgentinaDatetimeString();
         const mensajeFecha = `La fecha y hora actual es: ${fechaHoraActual}`;
         await toAsk(assistantId, mensajeFecha, state);
     }
@@ -309,13 +311,38 @@ const main = async () => {
 
 
                 // ...existing code...
-                const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowDoc, idleFlow]);
+                const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowDoc, locationFlow, idleFlow]);
                 const adapterDB = new MemoryDB();
                 adapterProvider = createProvider(BaileysProvider, {
                     version: [2, 3000, 1030817285],
                     groupsIgnore: false,
                     readStatus: false,
                     disableHttpServer: true,
+                });
+
+                adapterProvider.on('require_action', async (payload: any) => {
+                    console.log('⚡ [Provider] require_action received. Payload:', payload);
+                    let qrString = null;
+                    if (typeof payload === 'string') {
+                        qrString = payload;
+                    } else if (payload && typeof payload === 'object') {
+                        if (payload.qr) qrString = payload.qr;
+                        else if (payload.code) qrString = payload.code;
+                    }
+                    if (qrString && typeof qrString === 'string') {
+                        console.log('⚡ [Provider] QR Code detected (length: ' + qrString.length + '). Generating image...');
+                        try {
+                            const qrPath = path.join(process.cwd(), 'bot.qr.png');
+                            await QRCode.toFile(qrPath, qrString, {
+                                color: { dark: '#000000', light: '#ffffff' },
+                                scale: 4,
+                                margin: 2
+                            });
+                            console.log(`✅ [Provider] QR Image saved to ${qrPath}`);
+                        } catch (err) {
+                            console.error('❌ [Provider] Error generating QR image:', err);
+                        }
+                    }
                 });
 
                 errorReporter = new ErrorReporter(adapterProvider, ID_GRUPO_RESUMEN);
@@ -332,55 +359,213 @@ const main = async () => {
 
                 // Usar la instancia Polka (adapterProvider.server) para rutas
                 const polkaApp = adapterProvider.server;
+
+                // Middleware para parsear JSON en el body
+                polkaApp.use(bodyParser.json());
+
+                // 1. Middleware de compatibilidad (res.json, res.send, res.sendFile, etc)
+                polkaApp.use((req, res, next) => {
+                    res.status = (code) => { res.statusCode = code; return res; };
+                    res.send = (body) => {
+                        if (res.headersSent) return res;
+                        if (typeof body === 'object') {
+                            res.setHeader('Content-Type', 'application/json');
+                            res.end(JSON.stringify(body || null));
+                        } else {
+                            res.end(body || '');
+                        }
+                        return res;
+                    };
+                    res.json = (data) => {
+                        if (res.headersSent) return res;
+                        res.setHeader('Content-Type', 'application/json');
+                        res.end(JSON.stringify(data || null));
+                        return res;
+                    };
+                    res.sendFile = (filepath) => {
+                        if (res.headersSent) return;
+                        try {
+                            if (fs.existsSync(filepath)) {
+                                const ext = path.extname(filepath).toLowerCase();
+                                const mimeTypes = {
+                                    '.html': 'text/html',
+                                    '.js': 'application/javascript',
+                                    '.css': 'text/css',
+                                    '.png': 'image/png',
+                                    '.jpg': 'image/jpeg',
+                                    '.gif': 'image/gif',
+                                    '.svg': 'image/svg+xml',
+                                    '.json': 'application/json'
+                                };
+                                res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
+                                fs.createReadStream(filepath)
+                                    .on('error', (err) => {
+                                        console.error(`[ERROR] Stream error in sendFile (${filepath}):`, err);
+                                        if (!res.headersSent) {
+                                            res.statusCode = 500;
+                                            res.end('Internal Server Error');
+                                        }
+                                    })
+                                    .pipe(res);
+                            } else {
+                                console.error(`[ERROR] sendFile: File not found: ${filepath}`);
+                                res.statusCode = 404;
+                                res.end('Not Found');
+                            }
+                        } catch (e) {
+                            console.error(`[ERROR] Error in sendFile (${filepath}):`, e);
+                            if (!res.headersSent) {
+                                res.statusCode = 500;
+                                res.end('Internal Error');
+                            }
+                        }
+                    };
+                    next();
+                });
+
+                // 2. Middleware de logging y redirección de raíz
+                polkaApp.use((req, res, next) => {
+                    if (req.url === "/" || req.url === "") {
+                        res.writeHead(302, { 'Location': '/dashboard' });
+                        return res.end();
+                    }
+                    next();
+                });
+
                 polkaApp.use("/js", serve("src/js"));
                 polkaApp.use("/style", serve("src/style"));
                 polkaApp.use("/assets", serve("src/assets"));
                 
                 // Utilidad para servir páginas HTML estáticas
-                                function serveHtmlPage(route, filename) {
-                                    polkaApp.get(route, (req, res) => {
-                                        res.setHeader("Content-Type", "text/html");
-                                        // Buscar primero en src/ (local), luego en /app/src/ (deploy)
-                                        let htmlPath = path.join(__dirname, filename);
-                                        if (!fs.existsSync(htmlPath)) {
-                                            // Buscar en /app/src/ (deploy)
-                                            htmlPath = path.join(process.cwd(), 'src', filename);
-                                        }
-                                        try {
-                                            res.end(fs.readFileSync(htmlPath));
-                                        } catch (err) {
-                                            res.statusCode = 404;
-                                            res.end('HTML no encontrado');
-                                        }
-                                    });
+                function serveHtmlPage(route, filename) {
+                    polkaApp.get(route, (req, res) => {
+                        console.log(`[DEBUG] Serving HTML for ${req.url} -> ${filename}`);
+                        try {
+                            const possiblePaths = [
+                                path.join(process.cwd(), 'src', 'html', filename),
+                                path.join(process.cwd(), filename),
+                                path.join(process.cwd(), 'src', filename),
+                                path.join(__dirname, 'html', filename),
+                                path.join(__dirname, filename),
+                                path.join(__dirname, '..', 'src', 'html', filename)
+                            ];
+
+                            let htmlPath = null;
+                            for (const p of possiblePaths) {
+                                if (fs.existsSync(p) && fs.lstatSync(p).isFile()) {
+                                    htmlPath = p;
+                                    break;
                                 }
+                            }
 
-                                // Registrar páginas HTML
-                                serveHtmlPage("/webchat", "webchat.html");
-                                serveHtmlPage("/webreset", "webreset.html");
+                            if (htmlPath) {
+                                res.sendFile(htmlPath);
+                            } else {
+                                console.error(`[ERROR] File not found: ${filename}`);
+                                res.status(404).send('HTML no encontrado en el servidor');
+                            }
+                        } catch (err) {
+                            console.error(`[ERROR] Failed to serve ${filename}:`, err);
+                            res.status(500).send('Error interno al servir HTML');
+                        }
+                    });
+                }
 
-                                  // Endpoint para reiniciar el bot vía Railway
-  polkaApp.post("/api/restart-bot", async (req, res) => {
-  console.log('POST /api/restart-bot recibido');
-  try {
-    const result = await RailwayApi.restartActiveDeployment();
-    console.log('Resultado de restartRailwayDeployment:', result);
-    if (result.success) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        success: true,
-        message: "Reinicio solicitado correctamente."
-      }));
-    } else {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, error: result.error || "Error desconocido" }));
-    }
-  } catch (err: any) {
-    console.error('Error en /api/restart-bot:', err);
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: false, error: err.message }));
-  }
-});
+                // Registrar páginas HTML
+                serveHtmlPage("/dashboard", "dashboard.html");
+                serveHtmlPage("/webchat", "webchat.html");
+                serveHtmlPage("/webreset", "webreset.html");
+                serveHtmlPage("/variables", "variables.html");
+
+                // API Endpoints para el Dashboard
+                polkaApp.get("/api/dashboard-status", (req, res) => {
+                    try {
+                        const sessionsDir = path.join(process.cwd(), 'bot_sessions');
+                        const active = fs.existsSync(sessionsDir) && fs.readdirSync(sessionsDir).length > 0;
+                        res.json({ success: true, active });
+                    } catch (err) {
+                        res.json({ success: false, error: err.message });
+                    }
+                });
+
+                polkaApp.get("/api/assistant-name", (req, res) => {
+                    res.json({ name: process.env.ASSISTANT_NAME || 'Asistente demo' });
+                });
+
+                polkaApp.get("/api/variables", async (req, res) => {
+                    try {
+                        const variables = await RailwayApi.getVariables();
+                        if (variables) {
+                            res.json({ success: true, variables });
+                        } else {
+                            // Fallback a process.env si falla la API
+                            const vars = {};
+                            const keys = [
+                                'ASSISTANT_NAME', 'ASSISTANT_ID', 'ASSISTANT_ID_IMG', 'OPENAI_API_KEY', 'OPENAI_API_KEY_IMG',
+                                'ID_GRUPO_RESUMEN', 'ID_GRUPO_RESUMEN_2', 'msjCierre', 'timeOutCierre',
+                                'msjSeguimiento1', 'msjSeguimiento2', 'timeOutSeguimiento2', 'msjSeguimiento3', 'timeOutSeguimiento3',
+                                'GOOGLE_CLIENT_EMAIL', 'GOOGLE_PRIVATE_KEY', 'GOOGLE_MAPS_API_KEY', 'GOOGLE_CALENDAR_ID',
+                                'SHEET_ID_UPDATE', 'SHEET_ID_RESUMEN', 'DOCX_ID_UPDATE', 'VECTOR_STORE_ID',
+                                'SUPABASE_URL', 'SUPABASE_KEY', 'RAILWAY_TOKEN', 'RAILWAY_PROJECT_ID', 'RAILWAY_ENVIRONMENT_ID', 'RAILWAY_SERVICE_ID'
+                            ];
+                            keys.forEach(k => { vars[k] = process.env[k] || ''; });
+                            res.json({ success: true, variables: vars });
+                        }
+                    } catch (err) {
+                        res.status(500).json({ success: false, error: err.message });
+                    }
+                });
+
+                polkaApp.post("/api/update-variables", async (req, res) => {
+                    try {
+                        const { variables } = req.body;
+                        if (!variables) return res.status(400).json({ success: false, error: 'No variables provided' });
+                        
+                        const result = await RailwayApi.updateVariables(variables);
+                        if (result.success) {
+                            res.json({ success: true });
+                        } else {
+                            res.status(500).json({ success: false, error: result.error });
+                        }
+                    } catch (err) {
+                        res.status(500).json({ success: false, error: err.message });
+                    }
+                });
+
+                polkaApp.post("/api/delete-session", async (req, res) => {
+                    try {
+                        await deleteSessionFromDb();
+                        const sessionsDir = path.join(process.cwd(), 'bot_sessions');
+                        if (fs.existsSync(sessionsDir)) {
+                            fs.rmSync(sessionsDir, { recursive: true, force: true });
+                        }
+                        res.json({ success: true });
+                    } catch (err) {
+                        res.status(500).json({ success: false, error: err.message });
+                    }
+                });
+
+                polkaApp.post("/api/restart-bot", async (req, res) => {
+                    try {
+                        const result = await RailwayApi.restartActiveDeployment();
+                        if (result.success) {
+                            res.json({ success: true, message: "Reinicio solicitado correctamente." });
+                        } else {
+                            res.status(500).json({ success: false, error: result.error || "Error desconocido" });
+                        }
+                    } catch (err) {
+                        res.status(500).json({ success: false, error: err.message });
+                    }
+                });
+
+                polkaApp.get("/qr.png", (req, res) => {
+                    const qrPath = path.join(process.cwd(), 'bot.qr.png');
+                    if (fs.existsSync(qrPath)) {
+                        res.sendFile(qrPath);
+                    } else {
+                        res.status(404).send('QR no generado aún');
+                    }
+                });
 
                 // Obtener el servidor HTTP real de BuilderBot después de httpInject
                 const realHttpServer = adapterProvider.server.server;
@@ -624,6 +809,7 @@ export {
     welcomeFlowVoice,
     welcomeFlowImg,
     welcomeFlowDoc,
+    locationFlow,
     handleQueue,
     userQueues,
     userLocks,
