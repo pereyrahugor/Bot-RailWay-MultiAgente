@@ -635,8 +635,30 @@ const main = async () => {
 
                 // Agregar ruta personalizada para el webchat
                 polkaApp.get('/webchat', (req, res) => {
-                    res.setHeader('Content-Type', 'text/html');
-                    res.end(fs.readFileSync(path.join(__dirname, '../webchat.html')));
+                    console.log(`[DEBUG] Serving HTML for /webchat -> webchat.html`);
+                    const possiblePaths = [
+                        path.join(process.cwd(), 'src', 'html', 'webchat.html'),
+                        path.join(process.cwd(), 'webchat.html'),
+                        path.join(process.cwd(), 'src', 'webchat.html'),
+                        path.join(__dirname, 'html', 'webchat.html'),
+                        path.join(__dirname, 'webchat.html'),
+                        path.join(__dirname, '..', 'src', 'html', 'webchat.html')
+                    ];
+
+                    let htmlPath = null;
+                    for (const p of possiblePaths) {
+                        if (fs.existsSync(p) && fs.lstatSync(p).isFile()) {
+                            htmlPath = p;
+                            break;
+                        }
+                    }
+
+                    if (htmlPath) {
+                        res.sendFile(htmlPath);
+                    } else {
+                        console.error(`[ERROR] File not found: webchat.html`);
+                        res.status(404).send('HTML no encontrado en el servidor');
+                    }
                 });
 
                 // Integrar AssistantBridge si es necesario

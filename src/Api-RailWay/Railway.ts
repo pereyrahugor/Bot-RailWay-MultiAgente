@@ -136,29 +136,35 @@ export class RailwayApi {
   }
 
   /**
-   * Actualiza las variables de entorno en Railway
+   * Actualiza las variables de entorno en Railway de forma masiva para generar un solo deploy
    */
   static async updateVariables(newVariables: Record<string, string>): Promise<{ success: boolean; error?: string }> {
     const keys = Object.keys(newVariables).filter(key => !key.startsWith('RAILWAY_'));
 
     if (keys.length === 0) return { success: true };
 
-    // Railway v2 variableUpsert es para UNA sola variable.
-    // Construimos una mutación con múltiples llamadas usando alias para eficiencia.
-    let mutationParams = keys.map((_, i) => `$input${i}: VariableUpsertInput!`).join(', ');
-    let mutationBody = keys.map((_, i) => `  v${i}: variableUpsert(input: $input${i})`).join('\n');
-    const mutation = `mutation(${mutationParams}) {\n${mutationBody}\n}`;
+    const mutation = `
+      mutation variableCollectionUpsert(
+        $projectId: String!,
+        $environmentId: String!,
+        $serviceId: String!,
+        $variables: EnvironmentVariables!
+      ) {
+        variableCollectionUpsert(
+          projectId: $projectId,
+          environmentId: $environmentId,
+          serviceId: $serviceId,
+          variables: $variables
+        )
+      }
+    `;
 
-    const variables: Record<string, any> = {};
-    keys.forEach((key, i) => {
-      variables[`input${i}`] = {
-        projectId: RAILWAY_PROJECT_ID,
-        environmentId: RAILWAY_ENVIRONMENT_ID,
-        serviceId: RAILWAY_SERVICE_ID,
-        name: key,
-        value: String(newVariables[key])
-      };
-    });
+    const variables = {
+      projectId: RAILWAY_PROJECT_ID,
+      environmentId: RAILWAY_ENVIRONMENT_ID,
+      serviceId: RAILWAY_SERVICE_ID,
+      variables: newVariables
+    };
 
     try {
       const res = await fetch(RAILWAY_GRAPHQL_ENDPOINT, {
@@ -172,14 +178,14 @@ export class RailwayApi {
 
       const data = await res.json();
       if (data.errors?.length) {
-        console.error("[RailwayApi] Error en mutation:", JSON.stringify(data.errors, null, 2));
+        console.error("[RailwayApi] Error en mutation masiva:", JSON.stringify(data.errors, null, 2));
         const errorMsg = data.errors.map((e: any) => e.message).join("; ");
         return { success: false, error: errorMsg };
       }
 
       return { success: true };
     } catch (err: any) {
-      console.error("[RailwayApi] Error en updateVariables:", err);
+      console.error("[RailwayApi] Error en updateVariables masivo:", err);
       return { success: false, error: err.message };
     }
   }
