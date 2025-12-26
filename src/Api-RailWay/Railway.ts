@@ -128,7 +128,16 @@ export class RailwayApi {
         return null;
       }
 
-      return data?.data?.variables || null;
+      const allVariables = data?.data?.variables || {};
+      // Filtrar para no exponer variables internas de Railway al frontend
+      const filteredVariables: Record<string, string> = {};
+      Object.keys(allVariables).forEach(key => {
+        if (!key.startsWith('RAILWAY_')) {
+          filteredVariables[key] = allVariables[key];
+        }
+      });
+
+      return filteredVariables;
     } catch (err) {
       console.error("[RailwayApi] Error en getVariables:", err);
       return null;
@@ -139,7 +148,14 @@ export class RailwayApi {
    * Actualiza las variables de entorno en Railway de forma masiva para generar un solo deploy
    */
   static async updateVariables(newVariables: Record<string, string>): Promise<{ success: boolean; error?: string }> {
-    const keys = Object.keys(newVariables).filter(key => !key.startsWith('RAILWAY_'));
+    const filteredVariables: Record<string, string> = {};
+    const keys = Object.keys(newVariables).filter(key => {
+      if (!key.startsWith('RAILWAY_')) {
+        filteredVariables[key] = newVariables[key];
+        return true;
+      }
+      return false;
+    });
 
     if (keys.length === 0) return { success: true };
 
@@ -163,7 +179,7 @@ export class RailwayApi {
       projectId: RAILWAY_PROJECT_ID,
       environmentId: RAILWAY_ENVIRONMENT_ID,
       serviceId: RAILWAY_SERVICE_ID,
-      variables: newVariables
+      variables: filteredVariables
     };
 
     try {
