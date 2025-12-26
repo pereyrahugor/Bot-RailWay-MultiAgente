@@ -430,37 +430,36 @@ const main = async () => {
                     next();
                 });
 
-                polkaApp.use("/js", serve("src/js"));
-                polkaApp.use("/style", serve("src/style"));
-                polkaApp.use("/assets", serve("src/assets"));
+                polkaApp.use("/js", serve(path.join(process.cwd(), "src", "js")));
+                polkaApp.use("/style", serve(path.join(process.cwd(), "src", "style")));
+                polkaApp.use("/assets", serve(path.join(process.cwd(), "src", "assets")));
                 
                 // Utilidad para servir páginas HTML estáticas
                 function serveHtmlPage(route, filename) {
                     polkaApp.get(route, (req, res) => {
-                        console.log(`[DEBUG] Serving HTML for ${req.url} -> ${filename}`);
+                        console.log(`[DEBUG] Request for ${route} -> serving ${filename}`);
                         try {
                             const possiblePaths = [
                                 path.join(process.cwd(), 'src', 'html', filename),
-                                path.join(process.cwd(), filename),
-                                path.join(process.cwd(), 'src', filename),
+                                path.join(process.cwd(), 'html', filename),
                                 path.join(__dirname, 'html', filename),
-                                path.join(__dirname, filename),
                                 path.join(__dirname, '..', 'src', 'html', filename)
                             ];
 
                             let htmlPath = null;
                             for (const p of possiblePaths) {
-                                if (fs.existsSync(p) && fs.lstatSync(p).isFile()) {
+                                if (fs.existsSync(p)) {
                                     htmlPath = p;
                                     break;
                                 }
                             }
 
                             if (htmlPath) {
+                                console.log(`[DEBUG] Found HTML at: ${htmlPath}`);
                                 res.sendFile(htmlPath);
                             } else {
-                                console.error(`[ERROR] File not found: ${filename}`);
-                                res.status(404).send('HTML no encontrado en el servidor');
+                                console.error(`[ERROR] HTML file not found: ${filename}. Searched in: ${possiblePaths.join(', ')}`);
+                                res.status(404).send(`HTML no encontrado: ${filename}`);
                             }
                         } catch (err) {
                             console.error(`[ERROR] Failed to serve ${filename}:`, err);
@@ -471,9 +470,35 @@ const main = async () => {
 
                 // Registrar páginas HTML
                 serveHtmlPage("/dashboard", "dashboard.html");
-                serveHtmlPage("/webchat", "webchat.html");
                 serveHtmlPage("/webreset", "webreset.html");
                 serveHtmlPage("/variables", "variables.html");
+
+                // Ruta explícita para webchat para evitar conflictos
+                polkaApp.get("/webchat", (req, res) => {
+                    console.log(`[DEBUG] Explicit request for /webchat`);
+                    const htmlPath = path.join(process.cwd(), 'src', 'html', 'webchat.html');
+                    if (fs.existsSync(htmlPath)) {
+                        res.sendFile(htmlPath);
+                    } else {
+                        // Fallback a la lógica de serveHtmlPage si no está en la ruta esperada
+                        const possiblePaths = [
+                            path.join(process.cwd(), 'html', 'webchat.html'),
+                            path.join(__dirname, 'html', 'webchat.html'),
+                            path.join(__dirname, '..', 'src', 'html', 'webchat.html')
+                        ];
+                        let found = false;
+                        for (const p of possiblePaths) {
+                            if (fs.existsSync(p)) {
+                                res.sendFile(p);
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            res.status(404).send("Webchat HTML no encontrado");
+                        }
+                    }
+                });
 
                 // API Endpoints para el Dashboard
                 polkaApp.get("/api/dashboard-status", (req, res) => {
@@ -567,99 +592,6 @@ const main = async () => {
 
                 // Obtener el servidor HTTP real de BuilderBot después de httpInject
                 const realHttpServer = adapterProvider.server.server;
-
-                // Integrar Socket.IO sobre el servidor HTTP real de BuilderBot
-                const io = new Server(realHttpServer, { cors: { origin: '*' } });
-                io.on('connection', (socket) => {
-                    console.log('💬 Cliente web conectado');
-                    socket.on('message', async (msg) => {
-                        // Procesar el mensaje usando la lógica principal del bot
-                        try {
-                            let ip = '';
-                            const xff = socket.handshake.headers['x-forwarded-for'];
-                            if (typeof xff === 'string') {
-                                ip = xff.split(',')[0];
-                            } else if (Array.isArray(xff)) {
-                                ip = xff[0];
-                            } else {
-                                ip = socket.handshake.address || '';
-                            }
-                            // Centralizar historial y estado igual que WhatsApp
-                            if (!global.webchatHistories) global.webchatHistories = {};
-                            const historyKey = `webchat_${ip}`;
-                            if (!global.webchatHistories[historyKey]) global.webchatHistories[historyKey] = [];
-                            const _history = global.webchatHistories[historyKey];
-                            const state = {
-                                get: function (key) {
-                                    if (key === 'history') return _history;
-                                    return undefined;
-                                },
-                                update: async function (msg, role = 'user') {
-                                    if (_history.length > 0) {
-                                        const last = _history[_history.length - 1];
-                                        if (last.role === role && last.content === msg) return;
-                                    }
-                                    _history.push({ role, content: msg });
-                                    if (_history.length >= 6) {
-                                        const last3 = _history.slice(-3);
-                                        if (last3.every(h => h.role === 'user' && h.content === msg)) {
-                                            _history.length = 0;
-                                        }
-                                    }
-                                },
-                                clear: async function () { _history.length = 0; }
-                            };
-                            const provider = undefined;
-                            const gotoFlow = () => {};
-                            let replyText = '';
-                            const flowDynamic = async (arr) => {
-                                if (Array.isArray(arr)) {
-                                    replyText = arr.map(a => a.body).join('\n');
-                                } else if (typeof arr === 'string') {
-                                    replyText = arr;
-                                }
-                            };
-                            if (msg.trim().toLowerCase() === "#reset" || msg.trim().toLowerCase() === "#cerrar") {
-                                await state.clear();
-                                replyText = "🔄 El chat ha sido reiniciado. Puedes comenzar una nueva conversación.";
-                            } else {
-                                await processUserMessage({ from: ip, body: msg, type: 'webchat' }, { flowDynamic, state, provider, gotoFlow });
-                            }
-                            socket.emit('reply', replyText);
-                        } catch (err) {
-                            console.error('Error procesando mensaje webchat:', err);
-                            socket.emit('reply', 'Hubo un error procesando tu mensaje.');
-                        }
-                    });
-                });
-
-                // Agregar ruta personalizada para el webchat
-                polkaApp.get('/webchat', (req, res) => {
-                    console.log(`[DEBUG] Serving HTML for /webchat -> webchat.html`);
-                    const possiblePaths = [
-                        path.join(process.cwd(), 'src', 'html', 'webchat.html'),
-                        path.join(process.cwd(), 'webchat.html'),
-                        path.join(process.cwd(), 'src', 'webchat.html'),
-                        path.join(__dirname, 'html', 'webchat.html'),
-                        path.join(__dirname, 'webchat.html'),
-                        path.join(__dirname, '..', 'src', 'html', 'webchat.html')
-                    ];
-
-                    let htmlPath = null;
-                    for (const p of possiblePaths) {
-                        if (fs.existsSync(p) && fs.lstatSync(p).isFile()) {
-                            htmlPath = p;
-                            break;
-                        }
-                    }
-
-                    if (htmlPath) {
-                        res.sendFile(htmlPath);
-                    } else {
-                        console.error(`[ERROR] File not found: webchat.html`);
-                        res.status(404).send('HTML no encontrado en el servidor');
-                    }
-                });
 
                 // Integrar AssistantBridge si es necesario
                 const assistantBridge = new AssistantBridge();

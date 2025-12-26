@@ -23,12 +23,6 @@ export class AssistantBridge {
   public setupWebChat(app: any, server: http.Server) {
     // Servir el archivo webchat.html en /webchat (Polka no tiene sendFile)
 
-    app.get('/webchat', (req, res) => {
-      const filePath = path.join(process.cwd(), 'src', 'webchat.html');
-      res.setHeader('Content-Type', 'text/html');
-      res.end(fs.readFileSync(filePath));
-    });
-
     this.io = new Server(server, {
       cors: { origin: "*" }
     });
