@@ -41,8 +41,6 @@ const webChatManager = new WebChatManager();
 /** Puerto en el que se ejecutará el servidor (Railway usa 8080 por defecto) */
 const PORT = process.env.PORT || 8080;
 
-/** ID del asistente de OpenAI */
-//const ASSISTANT_ID = process.env.ASSISTANT_ID;
 const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_WS ?? "";
 
 const userQueues = new Map();
@@ -501,7 +499,7 @@ const main = async () => {
                             // Fallback a process.env si falla la API
                             const vars = {};
                             const keys = [
-                                'ASSISTANT_NAME', 'ASSISTANT_ID', 'ASSISTANT_ID_IMG', 'OPENAI_API_KEY', 'OPENAI_API_KEY_IMG',
+                                'ASSISTANT_NAME', 'ASSISTANT_1', 'ASSISTANT_2', 'ASSISTANT_3', 'ASSISTANT_4', 'ASSISTANT_5', 'ASSISTANT_ID_IMG', 'OPENAI_API_KEY', 'OPENAI_API_KEY_IMG',
                                 'ID_GRUPO_RESUMEN', 'ID_GRUPO_RESUMEN_2', 'msjCierre', 'timeOutCierre',
                                 'msjSeguimiento1', 'msjSeguimiento2', 'timeOutSeguimiento2', 'msjSeguimiento3', 'timeOutSeguimiento3',
                                 'GOOGLE_CLIENT_EMAIL', 'GOOGLE_PRIVATE_KEY', 'GOOGLE_MAPS_API_KEY', 'GOOGLE_CALENDAR_ID',

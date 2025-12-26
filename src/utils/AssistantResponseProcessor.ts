@@ -104,7 +104,7 @@ export class AssistantResponseProcessor {
         provider: any,
         gotoFlow: any,
         getAssistantResponse: Function,
-        ASSISTANT_ID: string
+        assistantId: string
     ) {
         // Soporte para tool/function call genérico
         // if (response && typeof response === 'object' && response.tool_call) {
@@ -152,7 +152,7 @@ export class AssistantResponseProcessor {
 
             // Enviar resultado al asistente (NO al usuario)
             const newResponse = await getAssistantResponse(
-                ASSISTANT_ID,
+                assistantId,
                 `[DB_RESULT] ${queryResult} [/DB_RESULT]`,
                 state,
                 undefined,
@@ -162,7 +162,7 @@ export class AssistantResponseProcessor {
 
             // Recursión: procesar la nueva respuesta
             await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                newResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_ID
+                newResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId
             );
             return; // Terminar ejecución actual
         }
@@ -299,12 +299,12 @@ export class AssistantResponseProcessor {
         if (cleanTextResponse.includes('Voy a proceder a realizar la reserva.')) {
             // Espera 30 segundos y responde ok al asistente
             await new Promise(res => setTimeout(res, 30000));
-            let assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, 'ok', state, undefined, ctx.from, ctx.from);
+            let assistantApiResponse = await getAssistantResponse(assistantId, 'ok', state, undefined, ctx.from, ctx.from);
             // Si la respuesta contiene (ID: ...), no la envíes al usuario, espera 10s y vuelve a enviar ok
             while (assistantApiResponse && /(ID:\s*\w+)/.test(assistantApiResponse)) {
                 console.log('[Debug] Respuesta contiene ID de reserva, esperando 10s y reenviando ok...');
                 await new Promise(res => setTimeout(res, 10000));
-                assistantApiResponse = await getAssistantResponse(ASSISTANT_ID, 'ok', state, undefined, ctx.from, ctx.from);
+                assistantApiResponse = await getAssistantResponse(assistantId, 'ok', state, undefined, ctx.from, ctx.from);
             }
             // Cuando la respuesta no contiene el ID, envíala al usuario
             if (assistantApiResponse) {
