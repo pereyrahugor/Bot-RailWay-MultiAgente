@@ -160,26 +160,18 @@ export class RailwayApi {
     if (keys.length === 0) return { success: true };
 
     const mutation = `
-      mutation variableCollectionUpsert(
-        $projectId: String!,
-        $environmentId: String!,
-        $serviceId: String!,
-        $variables: EnvironmentVariables!
-      ) {
-        variableCollectionUpsert(
-          projectId: $projectId,
-          environmentId: $environmentId,
-          serviceId: $serviceId,
-          variables: $variables
-        )
+      mutation variableCollectionUpsert($input: VariableCollectionUpsertInput!) {
+        variableCollectionUpsert(input: $input)
       }
     `;
 
     const variables = {
-      projectId: RAILWAY_PROJECT_ID,
-      environmentId: RAILWAY_ENVIRONMENT_ID,
-      serviceId: RAILWAY_SERVICE_ID,
-      variables: filteredVariables
+      input: {
+        projectId: RAILWAY_PROJECT_ID,
+        environmentId: RAILWAY_ENVIRONMENT_ID,
+        serviceId: RAILWAY_SERVICE_ID,
+        variables: filteredVariables
+      }
     };
 
     try {
