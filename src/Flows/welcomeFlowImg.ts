@@ -47,12 +47,31 @@ const welcomeFlowImg = addKeyword(EVENTS.MEDIA).addAction(
 
     // Procesar la imagen y responder directamente al usuario
     const fs = await import('fs');
+    const path = await import('path');
     try {
       if (!provider) {
         await flowDynamic("No se encontró el provider para descargar la imagen.");
         return;
       }
-      const localPath = await provider.saveFile(ctx, { path: "./tmp/" });
+
+      const tempDir = "./temp/";
+      if (!fs.default.existsSync(tempDir)) {
+        fs.default.mkdirSync(tempDir, { recursive: true });
+      }
+
+      // Limpieza previa: borrar archivos anteriores del usuario en temp
+      const files = fs.default.readdirSync(tempDir);
+      files.forEach(file => {
+        if (file.includes(userId)) {
+          try {
+            fs.default.unlinkSync(path.default.join(tempDir, file));
+          } catch (e) {
+            console.error(`Error eliminando archivo previo: ${file}`, e);
+          }
+        }
+      });
+
+      const localPath = await provider.saveFile(ctx, { path: tempDir });
       if (!localPath) {
         await flowDynamic("No se pudo guardar la imagen recibida.");
         return;
@@ -125,13 +144,6 @@ const welcomeFlowImg = addKeyword(EVENTS.MEDIA).addAction(
       if (!userLocks.get(userId) && userQueues.get(userId).length === 1) {
         await handleQueue(userId);
       }
-      fs.default.unlink(localPath, (err) => {
-        if (err) {
-          console.error(`❌ Error al eliminar el archivo: ${localPath}`, err);
-        } else {
-          console.log(`🗑️ Archivo eliminado: ${localPath}`);
-        }
-      });
     } catch (err) {
       console.error("Error procesando imagen:", err);
       await flowDynamic("Ocurrió un error al analizar la imagen. Intenta más tarde.");

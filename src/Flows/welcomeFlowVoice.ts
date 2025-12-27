@@ -23,16 +23,16 @@ export const welcomeFlowVoice = addKeyword<BaileysProvider, MemoryDB>(EVENTS.VOI
       }
 
         // 📌 Definir ruta donde se guardarán los audios
-        const audioFolder = path.join("./tmp/voiceNote/");
+        const audioFolder = path.join("./temp/voiceNote/");
 
         // 📌 Crear la carpeta si no existe
         if (!fs.existsSync(audioFolder)) {
             fs.mkdirSync(audioFolder, { recursive: true });
-            console.log("📂 Carpeta 'tmp/voiceNote' creada.");
+            console.log("📂 Carpeta 'temp/voiceNote' creada.");
         }
 
         // Guardar el archivo de audio localmente
-        const localPath = await provider.saveFile(ctx, { path: "./tmp/voiceNote/" });
+        const localPath = await provider.saveFile(ctx, { path: "./temp/voiceNote/" });
         console.log(`📂 Ruta del archivo de audio: ${localPath}`);
 
         // Transcribir el audio antes de procesarlo

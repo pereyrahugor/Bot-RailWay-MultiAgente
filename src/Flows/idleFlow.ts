@@ -100,9 +100,17 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                         // Forward image if "Foto o video" is "si"
                         if (data["Foto o video"]?.toLowerCase() === 'si') {
                             const lastImage = state.get('lastImage');
-                            if (lastImage) {
-                                await provider.sendFile(ID_GRUPO_RESUMEN_2, lastImage);
-                                console.log(`✅ Imagen reenviada al grupo ${ID_GRUPO_RESUMEN_2}`);
+                            if (lastImage && fs.existsSync(lastImage)) {
+                                setTimeout(async () => {
+                                    await provider.sendImage(ID_GRUPO_RESUMEN_2, lastImage);
+                                    console.log(`✅ Imagen reenviada al grupo ${ID_GRUPO_RESUMEN_2}`);
+                                    try {
+                                        fs.unlinkSync(lastImage);
+                                        console.log(`🗑️ Archivo eliminado después de enviar: ${lastImage}`);
+                                    } catch (e) {
+                                        console.error(`❌ Error al eliminar el archivo: ${lastImage}`, e);
+                                    }
+                                }, 2000);
                             }
                         }
                     } catch (err) {
@@ -124,9 +132,17 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                         // Forward image if "Foto o video" is "si"
                         if (data["Foto o video"]?.toLowerCase() === 'si') {
                             const lastImage = state.get('lastImage');
-                            if (lastImage) {
-                                await provider.sendFile(ID_GRUPO_RESUMEN, lastImage);
-                                console.log(`✅ Imagen reenviada al grupo ${ID_GRUPO_RESUMEN}`);
+                            if (lastImage && fs.existsSync(lastImage)) {
+                                setTimeout(async () => {
+                                    await provider.sendImage(ID_GRUPO_RESUMEN, lastImage);
+                                    console.log(`✅ Imagen reenviada al grupo ${ID_GRUPO_RESUMEN}`);
+                                    try {
+                                        fs.unlinkSync(lastImage);
+                                        console.log(`🗑️ Archivo eliminado después de enviar: ${lastImage}`);
+                                    } catch (e) {
+                                        console.error(`❌ Error al eliminar el archivo: ${lastImage}`, e);
+                                    }
+                                }, 2000);
                             }
                         }
                     } catch (err) {
@@ -148,9 +164,17 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                         // Forward image if "Foto o video" is "si"
                         if (data["Foto o video"]?.toLowerCase() === 'si') {
                             const lastImage = state.get('lastImage');
-                            if (lastImage) {
-                                await provider.sendFile(ID_GRUPO_RESUMEN, lastImage);
-                                console.log(`✅ Imagen reenviada al grupo ${ID_GRUPO_RESUMEN}`);
+                            if (lastImage && fs.existsSync(lastImage)) {
+                                setTimeout(async () => {
+                                    await provider.sendImage(ID_GRUPO_RESUMEN, lastImage);
+                                    console.log(`✅ Imagen reenviada al grupo ${ID_GRUPO_RESUMEN}`);
+                                    try {
+                                        fs.unlinkSync(lastImage);
+                                        console.log(`🗑️ Archivo eliminado después de enviar: ${lastImage}`);
+                                    } catch (e) {
+                                        console.error(`❌ Error al eliminar el archivo: ${lastImage}`, e);
+                                    }
+                                }, 2000);
                             }
                         }
                     } catch (err) {
