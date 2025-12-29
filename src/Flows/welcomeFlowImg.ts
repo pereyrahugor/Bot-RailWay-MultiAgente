@@ -20,19 +20,38 @@ import { addKeyword, EVENTS } from "@builderbot/bot";
 import { ErrorReporter } from "../utils/errorReporter";
 
 import { welcomeFlowTxt } from "./welcomeFlowTxt";
+import { welcomeFlowVideo } from "./welcomeFlowVideo";
 import axios from "axios";
 import { OpenAI } from "openai";
 import { reset } from "../utils/timeOut";
-import { handleQueue, userQueues, userLocks, userAssignedAssistant, ASSISTANT_MAP } from "../app";
+import { handleQueue, userQueues, userLocks } from "../app";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_IMG });
 const IMGUR_CLIENT_ID = "dbe415c6bbb950d";
-const setTime = 7 * 60 * 1000; // 7 minutos
+const setTime = Number(process.env.timeOutCierre) * 60 * 1000;
 
 
 const welcomeFlowImg = addKeyword(EVENTS.MEDIA).addAction(
   async (ctx, { flowDynamic, provider, gotoFlow, state }) => {
     const userId = ctx.from;
+
+    // Verificar si es una imagen (y no un video)
+    const mimetype = ctx?.media?.mimetype || ctx?.message?.imageMessage?.mimetype || "";
+    if (mimetype.includes('video')) {
+        return gotoFlow(welcomeFlowVideo);
+    }
+
+    // Filtrar contactos ignorados antes de agregar a la cola
+    if (
+      /@broadcast$/.test(userId) ||
+      /@newsletter$/.test(userId) ||
+      /@channel$/.test(userId) ||
+      /@lid$/.test(userId)
+    ) {
+      console.log(`Mensaje de imagen ignorado por filtro de contacto: ${userId}`);
+      return;
+    }
+
     reset(ctx, gotoFlow, setTime);
 
     // Asegurar que userQueues tenga un array inicializado para este usuario
@@ -47,35 +66,35 @@ const welcomeFlowImg = addKeyword(EVENTS.MEDIA).addAction(
 
     // Procesar la imagen y responder directamente al usuario
     const fs = await import('fs');
-    const path = await import('path');
     try {
       if (!provider) {
         await flowDynamic("No se encontró el provider para descargar la imagen.");
         return;
       }
-
-      const tempDir = "./temp/";
-      if (!fs.default.existsSync(tempDir)) {
-        fs.default.mkdirSync(tempDir, { recursive: true });
+      
+      // Asegurar que la carpeta temp exista
+      if (!fs.default.existsSync("./temp/")) {
+        fs.default.mkdirSync("./temp/", { recursive: true });
       }
-
-      // Limpieza previa: borrar archivos anteriores del usuario en temp
-      const files = fs.default.readdirSync(tempDir);
-      files.forEach(file => {
-        if (file.includes(userId)) {
-          try {
-            fs.default.unlinkSync(path.default.join(tempDir, file));
-          } catch (e) {
-            console.error(`Error eliminando archivo previo: ${file}`, e);
-          }
-        }
-      });
-
-      const localPath = await provider.saveFile(ctx, { path: tempDir });
+      
+      // Usar ./temp/ en lugar de ./tmp/ para consistencia
+      const localPath = await provider.saveFile(ctx, { path: "./temp/" });
       if (!localPath) {
         await flowDynamic("No se pudo guardar la imagen recibida.");
         return;
       }
+
+      // Eliminar imagen anterior si existe para no acumular archivos
+      const oldImage = state.get('lastImage');
+      if (oldImage && typeof oldImage === 'string' && fs.default.existsSync(oldImage)) {
+        try {
+          fs.default.unlinkSync(oldImage);
+          console.log(`🗑️ Imagen anterior eliminada: ${oldImage}`);
+        } catch (e) {
+          console.error(`❌ Error eliminando imagen anterior: ${oldImage}`, e);
+        }
+      }
+
       await state.update({ lastImage: localPath });
       const buffer = fs.default.readFileSync(localPath);
       const imgurRes = await axios.post(
@@ -137,13 +156,17 @@ const welcomeFlowImg = addKeyword(EVENTS.MEDIA).addAction(
         }
       }
       // Enviar el mensaje al asistente principal para que lo procese y mantenga el contexto
-      const assigned = userAssignedAssistant.get(userId) || 'asistente1';
-      ctx.body = `Se recibió una imagen con la siguiente información: ${result}`;
-      // Reencolar el mensaje para que lo procese el asistente actualmente asignado
-      userQueues.get(userId).push({ ctx, flowDynamic, state, provider, gotoFlow, assigned });
+      ctx.body = `Se recibio una imagen con la siguiente información: ${result}`;
+      // Reencolar el mensaje para que lo procese el flujo principal (texto)
+      if (!userQueues.has(userId)) {
+        userQueues.set(userId, []);
+      }
+      userQueues.get(userId).push({ ctx, flowDynamic, state, provider, gotoFlow });
       if (!userLocks.get(userId) && userQueues.get(userId).length === 1) {
         await handleQueue(userId);
       }
+      // Se elimina la eliminación inmediata para que idleFlow pueda reenviarla
+      console.log(`💾 Imagen guardada para resumen: ${localPath}`);
     } catch (err) {
       console.error("Error procesando imagen:", err);
       await flowDynamic("Ocurrió un error al analizar la imagen. Intenta más tarde.");

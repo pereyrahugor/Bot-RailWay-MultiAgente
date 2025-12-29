@@ -8,7 +8,7 @@ import { ReconectionFlow } from './reconectionFlow';
 import { userAssignedAssistant, ASSISTANT_MAP, analizarDestinoRecepcionista } from '../app';
 
 //** Variables de entorno para el envio de msj de resumen a grupo de WS */
-const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_RESUMEN ?? '';
+const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_WS ?? process.env.ID_GRUPO_RESUMEN ?? '';
 const ID_GRUPO_RESUMEN_2 = process.env.ID_GRUPO_RESUMEN_2 ?? '';
 const msjCierre: string = process.env.msjCierre as string;
 
@@ -54,13 +54,13 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
             // Limpieza robusta de caracteres invisibles y espacios
             const tipo = (data.tipo ?? '').replace(/[^A-Z0-9_]/gi, '').toUpperCase();
 
-            if (tipo === 'NO_REPORTAR_BAJA') {
+            if (tipo.includes('NO_REPORTAR_BAJA')) {
                 // No seguimiento, no enviar resumen al grupo ws, envia resumen a sheet, envia msj de cierre
                 console.log('NO_REPORTAR_BAJA: No se realiza seguimiento ni se envía resumen al grupo.');
                 data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
                 await addToSheet(data);
                 return endFlow();
-            } else if (tipo === 'NO_REPORTAR_SEGUIR') {
+            } else if (tipo.includes('NO_REPORTAR_SEGUIR')) {
                 // Solo este activa seguimiento
                 console.log('NO_REPORTAR_SEGUIR: Se realiza seguimiento, pero no se envía resumen al grupo.');
                 const reconFlow = new ReconectionFlow({
@@ -87,7 +87,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                 });
                 return await reconFlow.start();
                 // No cerrar el hilo aquí, dejar abierto para que el usuario pueda responder
-            } else if (tipo === 'SI_RESUMEN_G2') {
+            } else if (tipo.includes('SI_RESUMEN_G2')) {
                 // Solo envía resumen al grupo ws y sheets, no envia msj de cierre
                 console.log('SI_RESUMEN_G2: Solo se envía resumen al grupo y sheets.');
                 data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
@@ -97,20 +97,26 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                         await provider.sendText(ID_GRUPO_RESUMEN_2, resumenConLink);
                         console.log(`✅ SI_RESUMEN_G2: Resumen enviado a ${ID_GRUPO_RESUMEN_2} con enlace de WhatsApp`);
                         
-                        // Forward image if "Foto o video" is "si"
-                        if (data["Foto o video"]?.toLowerCase() === 'si') {
+                        // Forward image or video if "Foto o video" is "si"
+                        const fotoOVideo = data["Foto o video"]?.trim() || '';
+                        if (/^s[ií]$/i.test(fotoOVideo)) {
                             const lastImage = state.get('lastImage');
+                            const lastVideo = state.get('lastVideo');
+
                             if (lastImage && fs.existsSync(lastImage)) {
                                 setTimeout(async () => {
                                     await provider.sendImage(ID_GRUPO_RESUMEN_2, lastImage);
                                     console.log(`✅ Imagen reenviada al grupo ${ID_GRUPO_RESUMEN_2}`);
-                                    try {
-                                        fs.unlinkSync(lastImage);
-                                        console.log(`🗑️ Archivo eliminado después de enviar: ${lastImage}`);
-                                    } catch (e) {
-                                        console.error(`❌ Error al eliminar el archivo: ${lastImage}`, e);
-                                    }
+                                    try { fs.unlinkSync(lastImage); } catch (e) {}
                                 }, 2000);
+                            }
+
+                            if (lastVideo && fs.existsSync(lastVideo)) {
+                                setTimeout(async () => {
+                                    await provider.sendVideo(ID_GRUPO_RESUMEN_2, lastVideo);
+                                    console.log(`✅ Video reenviado al grupo ${ID_GRUPO_RESUMEN_2}`);
+                                    try { fs.unlinkSync(lastVideo); } catch (e) {}
+                                }, 2500);
                             }
                         }
                     } catch (err) {
@@ -119,7 +125,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                 }
                 await addToSheet(data);
                 return; // No enviar mensaje de cierre
-            } else if (tipo === 'SI_RESUMEN') {
+            } else if (tipo.includes('SI_RESUMEN')) {
                 // Solo envía resumen al grupo ws y sheets, no envia msj de cierre
                 console.log('SI_RESUMEN: Solo se envía resumen al grupo y sheets.');
                 data.linkWS = `https://wa.me/${ctx.from.replace(/[^0-9]/g, '')}`;
@@ -129,20 +135,26 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                         await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
                         console.log(`✅ SI_RESUMEN: Resumen enviado a ${ID_GRUPO_RESUMEN} con enlace de WhatsApp`);
 
-                        // Forward image if "Foto o video" is "si"
-                        if (data["Foto o video"]?.toLowerCase() === 'si') {
+                        // Forward image or video if "Foto o video" is "si"
+                        const fotoOVideo = data["Foto o video"]?.trim() || '';
+                        if (/^s[ií]$/i.test(fotoOVideo)) {
                             const lastImage = state.get('lastImage');
+                            const lastVideo = state.get('lastVideo');
+
                             if (lastImage && fs.existsSync(lastImage)) {
                                 setTimeout(async () => {
                                     await provider.sendImage(ID_GRUPO_RESUMEN, lastImage);
                                     console.log(`✅ Imagen reenviada al grupo ${ID_GRUPO_RESUMEN}`);
-                                    try {
-                                        fs.unlinkSync(lastImage);
-                                        console.log(`🗑️ Archivo eliminado después de enviar: ${lastImage}`);
-                                    } catch (e) {
-                                        console.error(`❌ Error al eliminar el archivo: ${lastImage}`, e);
-                                    }
+                                    try { fs.unlinkSync(lastImage); } catch (e) {}
                                 }, 2000);
+                            }
+
+                            if (lastVideo && fs.existsSync(lastVideo)) {
+                                setTimeout(async () => {
+                                    await provider.sendVideo(ID_GRUPO_RESUMEN, lastVideo);
+                                    console.log(`✅ Video reenviado al grupo ${ID_GRUPO_RESUMEN}`);
+                                    try { fs.unlinkSync(lastVideo); } catch (e) {}
+                                }, 2500);
                             }
                         }
                     } catch (err) {
@@ -161,20 +173,26 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                         await provider.sendText(ID_GRUPO_RESUMEN, resumenConLink);
                         console.log(`✅ DEFAULT: Resumen enviado a ${ID_GRUPO_RESUMEN} con enlace de WhatsApp`);
 
-                        // Forward image if "Foto o video" is "si"
-                        if (data["Foto o video"]?.toLowerCase() === 'si') {
+                        // Forward image or video if "Foto o video" is "si"
+                        const fotoOVideo = data["Foto o video"]?.trim() || '';
+                        if (/^s[ií]$/i.test(fotoOVideo)) {
                             const lastImage = state.get('lastImage');
+                            const lastVideo = state.get('lastVideo');
+
                             if (lastImage && fs.existsSync(lastImage)) {
                                 setTimeout(async () => {
                                     await provider.sendImage(ID_GRUPO_RESUMEN, lastImage);
                                     console.log(`✅ Imagen reenviada al grupo ${ID_GRUPO_RESUMEN}`);
-                                    try {
-                                        fs.unlinkSync(lastImage);
-                                        console.log(`🗑️ Archivo eliminado después de enviar: ${lastImage}`);
-                                    } catch (e) {
-                                        console.error(`❌ Error al eliminar el archivo: ${lastImage}`, e);
-                                    }
+                                    try { fs.unlinkSync(lastImage); } catch (e) {}
                                 }, 2000);
+                            }
+
+                            if (lastVideo && fs.existsSync(lastVideo)) {
+                                setTimeout(async () => {
+                                    await provider.sendVideo(ID_GRUPO_RESUMEN, lastVideo);
+                                    console.log(`✅ Video reenviado al grupo ${ID_GRUPO_RESUMEN}`);
+                                    try { fs.unlinkSync(lastVideo); } catch (e) {}
+                                }, 2500);
                             }
                         }
                     } catch (err) {
