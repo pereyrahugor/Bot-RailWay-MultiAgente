@@ -135,14 +135,14 @@ export const ASSISTANT_MAP = {
  */
 export function analizarDestinoRecepcionista(respuesta) {
     const lower = respuesta.toLowerCase();
-    // Detecta frases como "derivar a asistenteX", "derivando a asistenteX", etc. en cualquier parte del texto
-    if (/asistente\s*1\b/.test(lower)) return 'asistente1';
-    if (/asistente\s*2\b/.test(lower)) return 'asistente2';
-    if (/asistente\s*3\b/.test(lower)) return 'asistente3';
-    if (/asistente\s*4\b/.test(lower)) return 'asistente4'; // opcional
-    if (/asistente\s*5\b/.test(lower)) return 'asistente5'; // opcional
-    // Detecta frases como "derivar a asesor humano", "derivando a asesor humano", etc.
-    //if (/asesor humano/.test(lower)) return 'cliente';
+    // Detecta frases como "derivar a asistenteX", "derivando a asistenteX", etc.
+    // Se requiere que la frase incluya explícitamente la palabra "derivar" o "derivando" para evitar falsos positivos
+    if (/derivar(?:ndo)?\s+a\s+asistente\s*1\b/.test(lower)) return 'asistente1';
+    if (/derivar(?:ndo)?\s+a\s+asistente\s*2\b/.test(lower)) return 'asistente2';
+    if (/derivar(?:ndo)?\s+a\s+asistente\s*3\b/.test(lower)) return 'asistente3';
+    if (/derivar(?:ndo)?\s+a\s+asistente\s*4\b/.test(lower)) return 'asistente4'; 
+    if (/derivar(?:ndo)?\s+a\s+asistente\s*5\b/.test(lower)) return 'asistente5';
+    
     // Si contiene "derivar" o "derivando" pero no es claro el destino
     if (/derivar|derivando/.test(lower)) return 'ambiguous';
     return null;
@@ -154,7 +154,9 @@ export function analizarDestinoRecepcionista(respuesta) {
 export function extraerResumenRecepcionista(respuesta) {
     // Busca bloques que comiencen con GET_RESUMEN
     const match = respuesta.match(/GET_RESUMEN[\s\S]+/i);
-    return match ? match[0].trim() : respuesta;
+    // Si no hay resumen explícito, devolvemos un mensaje genérico de continuación en lugar de toda la respuesta
+    // para evitar que el siguiente asistente reciba su propio mensaje anterior como entrada del usuario.
+    return match ? match[0].trim() : "Continúa con la atención del cliente.";
 }
 
 const processUserMessage = async (
@@ -187,13 +189,13 @@ const processUserMessage = async (
         // Limpiar la respuesta para el usuario
         const respuestaSinResumen = String(response)
             .replace(/GET_RESUMEN[\s\S]+/i, '')
-            .replace(/^derivar(?:ndo)? a (asistente\s*[1-5]|asesor humano)\.?$/gim, '')
+            .replace(/^[ \t]*derivar(?:ndo)? a (asistente\s*[1-5]|asesor humano)\.?\s*$/gim, '')
             .replace(/\[Enviando.*$/gim, '')
             .replace(/^[ \t]*\n/gm, '')
             .trim();
 
-        // Si hay una derivación clara, actualizar el asistente asignado
-        if (destino && ASSISTANT_MAP[destino]) {
+        // Si hay una derivación clara y es a un asistente DIFERENTE al actual
+        if (destino && ASSISTANT_MAP[destino] && destino !== assigned) {
             userAssignedAssistant.set(ctx.from, destino);
             // Enviar respuesta limpia del asistente anterior (si hay)
             if (respuestaSinResumen) {
@@ -646,8 +648,8 @@ const main = async () => {
                                                     const threadId = await getOrCreateThreadId(session);
                                                     let reply = await sendMessageToThread(threadId, message, assistantId);
                                                     let destino = analizarDestinoRecepcionista(reply);
-                                                    // Si hay una derivación clara, actualizar el asistente asignado y volver a consultar al nuevo asistente
-                                                    if (destino && ASSISTANT_MAP[destino]) {
+                                                    // Si hay una derivación clara y es a un asistente DIFERENTE al actual, actualizar y volver a consultar
+                                                    if (destino && ASSISTANT_MAP[destino] && destino !== assigned) {
                                                         userAssignedAssistant.set(ip, destino);
                                                         // Reconsultar al nuevo asistente para esta misma interacción
                                                         reply = await sendMessageToThread(threadId, message, ASSISTANT_MAP[destino]);
