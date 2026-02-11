@@ -1,17 +1,16 @@
-// ...existing imports y lógica del bot...
-
 import path from 'path';
 import serve from 'serve-static';
 import { Server } from 'socket.io';
 import fs from 'fs';
 import bodyParser from 'body-parser';
 import QRCode from 'qrcode';
-// Estado global para encender/apagar el bot
 import "dotenv/config";
 import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@builderbot/bot";
 import { MemoryDB } from "@builderbot/bot";
+import { YCloudProvider } from "./providers/YCloudProvider";
 import { BaileysProvider } from "builderbot-provider-sherpa";
-import { restoreSessionFromDb, startSessionSync, deleteSessionFromDb } from "./utils/sessionSync";
+import { adapterProvider, groupProvider, setAdapterProvider, setGroupProvider } from "./providers/instances";
+import { restoreSessionFromDb, startSessionSync, deleteSessionFromDb, isSessionInDb } from "./utils/sessionSync";
 import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
 import { idleFlow } from "./Flows/idleFlow";
@@ -22,12 +21,9 @@ import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
 import { locationFlow } from "./Flows/locationFlow";
 import { AssistantResponseProcessor } from "./utils/AssistantResponseProcessor";
 import { updateMain } from "./addModule/updateMain";
-//import { listImg } from "./addModule/listImg";
 import { ErrorReporter } from "./utils/errorReporter";
-//import { testAuth } from './utils/test-google-auth.js';
-import { AssistantBridge } from './utils-web/AssistantBridge';
-import { WebChatManager } from './utils-web/WebChatManager';
-import { WebChatSession } from './utils-web/WebChatSession';
+import { AssistantBridge } from "./utils-web/AssistantBridge";
+import { WebChatManager } from "./utils-web/WebChatManager";
 import { fileURLToPath } from 'url';
 import { RailwayApi } from "./Api-RailWay/Railway";
 import { getArgentinaDatetimeString } from "./utils/ArgentinaTime";
@@ -36,126 +32,159 @@ import { getArgentinaDatetimeString } from "./utils/ArgentinaTime";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Instancia global de WebChatManager para sesiones webchat
 const webChatManager = new WebChatManager();
-// Eliminado: processUserMessageWeb. Usar lógica principal para ambos canales.
 
 /** Puerto en el que se ejecutará el servidor (Railway usa 8080 por defecto) */
 const PORT = process.env.PORT || 8080;
-
 const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_WS ?? "";
 
-const userQueues = new Map();
-const userLocks = new Map();
+export const userQueues = new Map();
+export const userLocks = new Map();
 // Mapa para persistir el asistente asignado a cada usuario
-const userAssignedAssistant = new Map();
+export const userAssignedAssistant = new Map();
 
-let adapterProvider;
+// Estado global para encender/apagar el bot
+let botEnabled = true;
+
 let errorReporter;
 
+/**
+ * Maneja la cola de mensajes por usuario para evitar condiciones de carrera
+ */
+export const handleQueue = async (userId) => {
+    const queue = userQueues.get(userId);
+    if (!queue || userLocks.get(userId)) return;
+
+    userLocks.set(userId, true);
+    while (queue.length > 0) {
+        const { ctx, flowDynamic, state, provider, gotoFlow } = queue.shift();
+        try {
+            await processUserMessage(ctx, { flowDynamic, state, provider, gotoFlow });
+        } catch (error) {
+            console.error(`Error procesando el mensaje de ${userId}:`, error);
+        }
+    }
+    userLocks.set(userId, false);
+};
+
+// Función auxiliar para verificar el estado de ambos proveedores
+const getBotStatus = async () => {
+    try {
+        // 1. Estado YCloud (Meta)
+        const ycloudConfigured = !!(process.env.YCLOUD_API_KEY && process.env.YCLOUD_WABA_NUMBER);
+        
+        // 2. Estado Motor de Grupos (Baileys)
+        const groupsReady = !!(groupProvider?.vendor?.user || groupProvider?.globalVendorArgs?.sock?.user);
+        
+        const sessionsDir = path.join(process.cwd(), 'bot_sessions');
+        let groupsLocalActive = false;
+        if (fs.existsSync(sessionsDir)) {
+            const files = fs.readdirSync(sessionsDir).filter(f => f.endsWith('.json'));
+            groupsLocalActive = files.includes('creds.json');
+        }
+
+        const groupsRemoteActive = await isSessionInDb('groups');
+
+        return {
+            ycloud: {
+                active: ycloudConfigured,
+                status: ycloudConfigured ? 'connected' : 'error',
+                phoneNumber: process.env.YCLOUD_WABA_NUMBER || null
+            },
+            groups: {
+                initialized: !!groupProvider,
+                active: groupsReady,
+                source: groupsReady ? 'connected' : (groupsLocalActive ? 'local' : 'none'),
+                hasRemote: groupsRemoteActive,
+                qr: fs.existsSync(path.join(process.cwd(), 'bot.groups.qr.png')),
+                phoneNumber: groupProvider?.vendor?.user?.id?.split(':')[0] || null
+            }
+        };
+    } catch (e) {
+        console.error('[Status] Error obteniendo estado:', e);
+        return { error: String(e) };
+    }
+};
+
 const TIMEOUT_MS = 40000;
-
-// Control de timeout por usuario para evitar ejecuciones automáticas superpuestas
 const userTimeouts = new Map();
-
-// Mapa para controlar reintentos por usuario
 const userRetryCount = new Map();
 
 export const getAssistantResponse = async (assistantId, message, state, fallbackMessage, userId, thread_id = null) => {
-    // Si es un nuevo hilo, envía primero la fecha y hora actual
     if (!thread_id) {
         const fechaHoraActual = getArgentinaDatetimeString();
         const mensajeFecha = `La fecha y hora actual es: ${fechaHoraActual}`;
         await toAsk(assistantId, mensajeFecha, state);
     }
-  // Si hay un timeout previo, lo limpiamos
-  if (userTimeouts.has(userId)) {
-    clearTimeout(userTimeouts.get(userId));
-    userTimeouts.delete(userId);
-  }
-
-  let timeoutResolve;
-  const timeoutPromise = new Promise((resolve) => {
-    timeoutResolve = resolve;
-    const timeoutId = setTimeout(async () => {
-      // Reintentos solo al asistente
-      const retries = userRetryCount.get(userId) || 0;
-      if (retries < 2) {
-        userRetryCount.set(userId, retries + 1);
-        console.warn(`⏱ Timeout alcanzado. Reintentando (${retries + 1}/3) con el último mensaje del usuario al asistente...`);
-        resolve(toAsk(assistantId, message, state));
-      } else {
-        userRetryCount.set(userId, 0); // Reset para futuros intentos
-        console.error(`⏱ Timeout alcanzado. Se realizaron 3 intentos sin respuesta del asistente. Reportando error al grupo.`);
-        await errorReporter.reportError(
-          new Error("No se recibió respuesta del asistente tras 3 intentos."),
-          userId,
-          `https://wa.me/${userId}`
-        );
-        resolve(null);
-      }
-      userTimeouts.delete(userId);
-    }, TIMEOUT_MS);
-    userTimeouts.set(userId, timeoutId);
-  });
-
-  // Lanzamos la petición a OpenAI
-  const askPromise = toAsk(assistantId, message, state).then((result) => {
-    // Si responde antes del timeout, limpiamos el timeout y el contador de reintentos
     if (userTimeouts.has(userId)) {
-      clearTimeout(userTimeouts.get(userId));
-      userTimeouts.delete(userId);
+        clearTimeout(userTimeouts.get(userId));
+        userTimeouts.delete(userId);
     }
-    userRetryCount.set(userId, 0);
-    timeoutResolve(result);
-    return result;
-  });
 
-  // El primero que responda (OpenAI o timeout) gana
-  return Promise.race([askPromise, timeoutPromise]);
+    let timeoutResolve;
+    const timeoutPromise = new Promise((resolve) => {
+        timeoutResolve = resolve;
+        const timeoutId = setTimeout(async () => {
+            const retries = userRetryCount.get(userId) || 0;
+            if (retries < 2) {
+                userRetryCount.set(userId, retries + 1);
+                console.warn(`⏱ Timeout alcanzado. Reintentando (${retries + 1}/3)...`);
+                resolve(toAsk(assistantId, message, state));
+            } else {
+                userRetryCount.set(userId, 0);
+                console.error(`⏱ Timeout alcanzado tras 3 intentos.`);
+                await errorReporter.reportError(
+                    new Error("No se recibió respuesta del asistente tras 3 intentos."),
+                    userId,
+                    `https://wa.me/${userId}`
+                );
+                resolve(null);
+            }
+            userTimeouts.delete(userId);
+        }, TIMEOUT_MS);
+        userTimeouts.set(userId, timeoutId);
+    });
+
+    const askPromise = toAsk(assistantId, message, state).then((result) => {
+        if (userTimeouts.has(userId)) {
+            clearTimeout(userTimeouts.get(userId));
+            userTimeouts.delete(userId);
+        }
+        userRetryCount.set(userId, 0);
+        timeoutResolve(result);
+        return result;
+    });
+
+    return Promise.race([askPromise, timeoutPromise]);
 };
 
-// IDs genéricos de asistentes
-const ASSISTANT_1 = process.env.ASSISTANT_1; // Recepcionista
-const ASSISTANT_2 = process.env.ASSISTANT_2; // Asistente2
-const ASSISTANT_3 = process.env.ASSISTANT_3; // Asistente3
-const ASSISTANT_4 = process.env.ASSISTANT_4; // ASistente4 (opcional, si se usa otro asistente)
-const ASSISTANT_5 = process.env.ASSISTANT_5; // Asistente5 (opcional, si se usa otro asistente)
+// Asistentes
+const ASSISTANT_1 = process.env.ASSISTANT_1; 
+const ASSISTANT_2 = process.env.ASSISTANT_2; 
+const ASSISTANT_3 = process.env.ASSISTANT_3; 
+const ASSISTANT_4 = process.env.ASSISTANT_4; 
+const ASSISTANT_5 = process.env.ASSISTANT_5; 
 
-// Mapeo lógico para derivación
 export const ASSISTANT_MAP = {
     asistente1: ASSISTANT_1,
     asistente2: ASSISTANT_2,
     asistente3: ASSISTANT_3,
-    asistente4: ASSISTANT_4, // opcional
-    asistente5: ASSISTANT_5, // opcional
+    asistente4: ASSISTANT_4,
+    asistente5: ASSISTANT_5,
 };
 
-/**
- * Analiza la respuesta del recepcionista para determinar el destino.
- * Devuelve: 'asistente1', 'asistente2', 'asistente3', 'cliente', 'ambiguous' o null
- */
 export function analizarDestinoRecepcionista(respuesta) {
     const lower = respuesta.toLowerCase();
-    // Detecta frases como "derivar a asistenteX", "derivando a asistenteX", etc.
-    // Se requiere que la frase incluya explícitamente la palabra "derivar" o "derivando" para evitar falsos positivos
     if (/derivar(?:ndo)?\s+a\s+asistente\s*1\b/.test(lower)) return 'asistente1';
     if (/derivar(?:ndo)?\s+a\s+asistente\s*2\b/.test(lower)) return 'asistente2';
     if (/derivar(?:ndo)?\s+a\s+asistente\s*3\b/.test(lower)) return 'asistente3';
     if (/derivar(?:ndo)?\s+a\s+asistente\s*4\b/.test(lower)) return 'asistente4'; 
     if (/derivar(?:ndo)?\s+a\s+asistente\s*5\b/.test(lower)) return 'asistente5';
-    
-    // Si contiene "derivar" o "derivando" pero no es claro el destino
     if (/derivar|derivando/.test(lower)) return 'ambiguous';
     return null;
 }
 
-/**
- * Extrae el resumen GET_RESUMEN de la respuesta del recepcionista
- */
 export function extraerResumenRecepcionista(respuesta) {
-    // Busca bloques que comiencen con GET_RESUMEN
     const match = respuesta.match(/GET_RESUMEN[\s\S]+/i);
-    // Si no hay resumen explícito, devolvemos un mensaje genérico de continuación en lugar de toda la respuesta
-    // para evitar que el siguiente asistente reciba su propio mensaje anterior como entrada del usuario.
     return match ? match[0].trim() : "Continúa con la atención del cliente.";
 }
 
@@ -163,9 +192,14 @@ const processUserMessage = async (
     ctx,
     { flowDynamic, state, provider, gotoFlow }
 ) => {
+    const userId = ctx.from;
+    const botNumber = (process.env.YCLOUD_WABA_NUMBER || '').replace(/\D/g, '');
+    
+    if (userId.replace(/\D/g, '') === botNumber) return;
+    if (!botEnabled) return;
+
     await typing(ctx, provider);
     try {
-        // Determinar el asistente asignado actual
         const assigned = userAssignedAssistant.get(ctx.from) || 'asistente1';
         const response = await getAssistantResponse(
             ASSISTANT_MAP[assigned],
@@ -182,11 +216,10 @@ const processUserMessage = async (
             );
             return;
         }
+
         const destino = analizarDestinoRecepcionista(response);
         const resumen = extraerResumenRecepcionista(response);
-        console.log(`[DERIVACION] Respuesta ${assigned}:`, response);
-        console.log(`[DERIVACION] Destino detectado:`, destino);
-        // Limpiar la respuesta para el usuario
+        
         const respuestaSinResumen = String(response)
             .replace(/GET_RESUMEN[\s\S]+/i, '')
             .replace(/^[ \t]*derivar(?:ndo)? a (asistente\s*[1-5]|asesor humano)\.?\s*$/gim, '')
@@ -194,583 +227,220 @@ const processUserMessage = async (
             .replace(/^[ \t]*\n/gm, '')
             .trim();
 
-        // Si hay una derivación clara y es a un asistente DIFERENTE al actual
         if (destino && ASSISTANT_MAP[destino] && destino !== assigned) {
             userAssignedAssistant.set(ctx.from, destino);
-            // Enviar respuesta limpia del asistente anterior (si hay)
             if (respuestaSinResumen) {
                 await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                    respuestaSinResumen,
-                    ctx,
-                    flowDynamic,
-                    state,
-                    provider,
-                    gotoFlow,
-                    getAssistantResponse,
-                    ASSISTANT_MAP[assigned]
+                    respuestaSinResumen, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_MAP[assigned]
                 );
             }
-            // Derivar y responder con el nuevo asistente
             const respuestaDestino = await getAssistantResponse(
-                ASSISTANT_MAP[destino],
-                resumen,
-                state,
-                "Por favor, responde aunque sea brevemente.",
-                ctx.from
+                ASSISTANT_MAP[destino], resumen, state, "Por favor, responde.", ctx.from
             );
             await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                String(respuestaDestino).trim(),
-                ctx,
-                flowDynamic,
-                state,
-                provider,
-                gotoFlow,
-                getAssistantResponse,
-                ASSISTANT_MAP[destino]
+                String(respuestaDestino).trim(), ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_MAP[destino]
             );
             return state;
-        } else if (destino === 'ambiguous') {
-            // No cambiar el asistente, solo mostrar respuesta
-            if (respuestaSinResumen) {
-                await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                    respuestaSinResumen,
-                    ctx,
-                    flowDynamic,
-                    state,
-                    provider,
-                    gotoFlow,
-                    getAssistantResponse,
-                    ASSISTANT_MAP[assigned]
-                );
-            }
-            return state;
         } else {
-            // No hay derivación, mantener el asistente actual
             if (respuestaSinResumen) {
                 await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                    respuestaSinResumen,
-                    ctx,
-                    flowDynamic,
-                    state,
-                    provider,
-                    gotoFlow,
-                    getAssistantResponse,
-                    ASSISTANT_MAP[assigned]
+                    respuestaSinResumen, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_MAP[assigned]
                 );
             }
             return state;
         }
     } catch (error) {
-        console.error("Error al procesar el mensaje del usuario:", error);
-        await errorReporter.reportError(
-            error,
-            ctx.from,
-            `https://wa.me/${ctx.from}`
-        );
-        if (ctx.type === EVENTS.VOICE_NOTE) {
-            return gotoFlow(welcomeFlowVoice);
-        } else {
-            return gotoFlow(welcomeFlowTxt);
-        }
+        console.error("Error al procesar el mensaje:", error);
+        await errorReporter.reportError(error, ctx.from, `https://wa.me/${ctx.from}`);
+        return (ctx.type === EVENTS.VOICE_NOTE) ? gotoFlow(welcomeFlowVoice) : gotoFlow(welcomeFlowTxt);
     }
 };
 
-
-const handleQueue = async (userId) => {
-    const queue = userQueues.get(userId);
-
-    if (userLocks.get(userId)) return;
-
-    userLocks.set(userId, true);
-
-    while (queue.length > 0) {
-        const { ctx, flowDynamic, state, provider, gotoFlow } = queue.shift();
-        try {
-            await processUserMessage(ctx, { flowDynamic, state, provider, gotoFlow });
-        } catch (error) {
-            console.error(`Error procesando el mensaje de ${userId}:`, error);
-        }
-    }
-
-    userLocks.set(userId, false);
-    userQueues.delete(userId);
-};
-
-// Main function to initialize the bot and load Google Sheets data
 const main = async () => {
-    await restoreSessionFromDb();
+    // QR Cleanup
+    const qrPath = path.join(process.cwd(), 'bot.qr.png');
+    if (fs.existsSync(qrPath)) fs.unlinkSync(qrPath);
 
-    // Verificar credenciales de Google Sheets al iniciar
-    //await testAuth();
+    // Restore Groups
+    await restoreSessionFromDb('groups');
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // Actualizar listado de imágenes en vector store
-    //await listImg();
+    // Providers
+    setAdapterProvider(createProvider(YCloudProvider, {}));
+    setGroupProvider(createProvider(BaileysProvider, {
+        version: [2, 3000, 1030817285],
+        groupsIgnore: false,
+        readStatus: false,
+        disableHttpServer: true
+    }));
 
-    // Cargar todas las hojas principales con una sola función reutilizable
+    const handleQR = async (qrString: string) => {
+        if (qrString) {
+            const qrPath = path.join(process.cwd(), 'bot.groups.qr.png');
+            await QRCode.toFile(qrPath, qrString, { scale: 10, margin: 2 });
+        }
+    };
+
+    groupProvider.on('require_action', async (p) => handleQR(typeof p === 'string' ? p : p?.qr || p?.code));
+    groupProvider.on('qr', handleQR);
+    groupProvider.on('ready', () => {
+        console.log('✅ [GroupSync] Motor de grupos conectado.');
+        const p = path.join(process.cwd(), 'bot.groups.qr.png');
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+    });
+
+    setTimeout(async () => {
+        if (groupProvider.initVendor) await groupProvider.initVendor();
+        else if ((groupProvider as any).init) await (groupProvider as any).init();
+    }, 1000);
+
+    adapterProvider.on('message', (ctx) => {
+        if (ctx.type === 'interactive' || ctx.type === 'button') ctx.type = EVENTS.ACTION;
+    });
+
     await updateMain();
 
+    const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowDoc, locationFlow, idleFlow]);
+    const adapterDB = new MemoryDB();
 
-                // ...existing code...
-                const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowDoc, locationFlow, idleFlow]);
-                const adapterDB = new MemoryDB();
-                adapterProvider = createProvider(BaileysProvider, {
-                    version: [2, 3000, 1030817285],
-                    groupsIgnore: false,
-                    readStatus: false,
-                    disableHttpServer: true,
-                });
+    const { httpServer } = await createBot({
+        flow: adapterFlow,
+        provider: adapterProvider,
+        database: adapterDB,
+    });
 
-                adapterProvider.on('require_action', async (payload: any) => {
-                    console.log('⚡ [Provider] require_action received. Payload:', payload);
-                    let qrString = null;
-                    if (typeof payload === 'string') {
-                        qrString = payload;
-                    } else if (payload && typeof payload === 'object') {
-                        if (payload.qr) qrString = payload.qr;
-                        else if (payload.code) qrString = payload.code;
-                    }
-                    if (qrString && typeof qrString === 'string') {
-                        console.log('⚡ [Provider] QR Code detected (length: ' + qrString.length + '). Generating image...');
-                        try {
-                            const qrPath = path.join(process.cwd(), 'bot.qr.png');
-                            await QRCode.toFile(qrPath, qrString, {
-                                color: { dark: '#000000', light: '#ffffff' },
-                                scale: 4,
-                                margin: 2
-                            });
-                            console.log(`✅ [Provider] QR Image saved to ${qrPath}`);
-                        } catch (err) {
-                            console.error('❌ [Provider] Error generating QR image:', err);
-                        }
-                    }
-                });
+    errorReporter = new ErrorReporter(groupProvider, ID_GRUPO_RESUMEN);
 
-                errorReporter = new ErrorReporter(adapterProvider, ID_GRUPO_RESUMEN);
+    startSessionSync('groups');
+    httpInject(adapterProvider.server);
 
-                const { httpServer } = await createBot({
-                    flow: adapterFlow,
-                    provider: adapterProvider,
-                    database: adapterDB,
-                });
+    const app = adapterProvider.server;
+    app.use(bodyParser.json());
 
-                startSessionSync();
+    // Middleware Compatibilidad
+    app.use((req, res, next) => {
+        res.status = (c) => { res.statusCode = c; return res; };
+        res.send = (b) => {
+            if (res.headersSent) return res;
+            if (typeof b === 'object') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(b)); }
+            else res.end(b || '');
+            return res;
+        };
+        res.json = (d) => {
+            if (res.headersSent) return res;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify(d));
+            return res;
+        };
+        res.sendFile = (f) => {
+            if (res.headersSent) return;
+            if (fs.existsSync(f)) {
+                const ext = path.extname(f).toLowerCase();
+                const mimes = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg' };
+                res.setHeader('Content-Type', mimes[ext] || 'application/octet-stream');
+                fs.createReadStream(f).pipe(res);
+            } else { res.statusCode = 404; res.end('Not Found'); }
+        };
+        next();
+    });
 
-                httpInject(adapterProvider.server);
+    // Root Redirect
+    app.use((req, res, next) => {
+        if (req.url === "/" || req.url === "") {
+            res.writeHead(302, { 'Location': '/dashboard' });
+            return res.end();
+        }
+        next();
+    });
 
-                // Usar la instancia Polka (adapterProvider.server) para rutas
-                const polkaApp = adapterProvider.server;
+    app.use("/js", serve(path.join(process.cwd(), "src", "js")));
+    app.use("/style", serve(path.join(process.cwd(), "src", "style")));
+    app.use("/assets", serve(path.join(process.cwd(), "src", "assets")));
+    
+    app.post('/webhook', (req, res) => {
+        // @ts-ignore
+        adapterProvider.handleWebhook(req, res);
+    });
 
-                // Middleware para parsear JSON en el body
-                polkaApp.use(bodyParser.json());
+    function serveHtmlPage(route, filename) {
+        app.get(route, (req, res) => {
+            const possible = [
+                path.join(process.cwd(), 'src', 'html', filename),
+                path.join(process.cwd(), 'html', filename),
+                path.join(__dirname, 'html', filename)
+            ];
+            const found = possible.find(p => fs.existsSync(p));
+            if (found) res.sendFile(found);
+            else res.status(404).send('Not Found');
+        });
+    }
 
-                // 1. Middleware de compatibilidad (res.json, res.send, res.sendFile, etc)
-                polkaApp.use((req, res, next) => {
-                    res.status = (code) => { res.statusCode = code; return res; };
-                    res.send = (body) => {
-                        if (res.headersSent) return res;
-                        if (typeof body === 'object') {
-                            res.setHeader('Content-Type', 'application/json');
-                            res.end(JSON.stringify(body || null));
-                        } else {
-                            res.end(body || '');
-                        }
-                        return res;
-                    };
-                    res.json = (data) => {
-                        if (res.headersSent) return res;
-                        res.setHeader('Content-Type', 'application/json');
-                        res.end(JSON.stringify(data || null));
-                        return res;
-                    };
-                    res.sendFile = (filepath) => {
-                        if (res.headersSent) return;
-                        try {
-                            if (fs.existsSync(filepath)) {
-                                const ext = path.extname(filepath).toLowerCase();
-                                const mimeTypes = {
-                                    '.html': 'text/html',
-                                    '.js': 'application/javascript',
-                                    '.css': 'text/css',
-                                    '.png': 'image/png',
-                                    '.jpg': 'image/jpeg',
-                                    '.gif': 'image/gif',
-                                    '.svg': 'image/svg+xml',
-                                    '.json': 'application/json'
-                                };
-                                res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
-                                fs.createReadStream(filepath)
-                                    .on('error', (err) => {
-                                        console.error(`[ERROR] Stream error in sendFile (${filepath}):`, err);
-                                        if (!res.headersSent) {
-                                            res.statusCode = 500;
-                                            res.end('Internal Server Error');
-                                        }
-                                    })
-                                    .pipe(res);
-                            } else {
-                                console.error(`[ERROR] sendFile: File not found: ${filepath}`);
-                                res.statusCode = 404;
-                                res.end('Not Found');
-                            }
-                        } catch (e) {
-                            console.error(`[ERROR] Error in sendFile (${filepath}):`, e);
-                            if (!res.headersSent) {
-                                res.statusCode = 500;
-                                res.end('Internal Error');
-                            }
-                        }
-                    };
-                    next();
-                });
+    serveHtmlPage("/dashboard", "dashboard.html");
+    serveHtmlPage("/webreset", "webreset.html");
+    serveHtmlPage("/variables", "variables.html");
 
-                // 2. Middleware de logging y redirección de raíz
-                polkaApp.use((req, res, next) => {
-                    if (req.url === "/" || req.url === "") {
-                        res.writeHead(302, { 'Location': '/dashboard' });
-                        return res.end();
-                    }
-                    next();
-                });
+    app.get("/webchat", (req, res) => {
+        const p = path.join(process.cwd(), 'src', 'html', 'webchat.html');
+        if (fs.existsSync(p)) res.sendFile(p);
+        else res.status(404).send("Not Found");
+    });
 
-                polkaApp.use("/js", serve(path.join(process.cwd(), "src", "js")));
-                polkaApp.use("/style", serve(path.join(process.cwd(), "src", "style")));
-                polkaApp.use("/assets", serve(path.join(process.cwd(), "src", "assets")));
-                
-                // Utilidad para servir páginas HTML estáticas
-                function serveHtmlPage(route, filename) {
-                    polkaApp.get(route, (req, res) => {
-                        console.log(`[DEBUG] Request for ${route} -> serving ${filename}`);
-                        try {
-                            const possiblePaths = [
-                                path.join(process.cwd(), 'src', 'html', filename),
-                                path.join(process.cwd(), 'html', filename),
-                                path.join(__dirname, 'html', filename),
-                                path.join(__dirname, '..', 'src', 'html', filename)
-                            ];
+    app.get("/api/dashboard-status", async (req, res) => res.json(await getBotStatus()));
+    app.get("/api/assistant-name", (req, res) => res.json({ name: process.env.ASSISTANT_NAME || 'Asistente' }));
+    
+    app.get("/api/variables", async (req, res) => {
+        try {
+            const variables = await RailwayApi.getVariables();
+            res.json({ success: true, variables });
+        } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+    });
 
-                            let htmlPath = null;
-                            for (const p of possiblePaths) {
-                                if (fs.existsSync(p)) {
-                                    htmlPath = p;
-                                    break;
-                                }
-                            }
+    app.post("/api/update-variables", async (req, res) => {
+        try {
+            const result = await RailwayApi.updateVariables(req.body.variables);
+            res.json({ success: result.success });
+        } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+    });
 
-                            if (htmlPath) {
-                                console.log(`[DEBUG] Found HTML at: ${htmlPath}`);
-                                res.sendFile(htmlPath);
-                            } else {
-                                console.error(`[ERROR] HTML file not found: ${filename}. Searched in: ${possiblePaths.join(', ')}`);
-                                res.status(404).send(`HTML no encontrado: ${filename}`);
-                            }
-                        } catch (err) {
-                            console.error(`[ERROR] Failed to serve ${filename}:`, err);
-                            res.status(500).send('Error interno al servir HTML');
-                        }
-                    });
-                }
+    app.post("/api/restart-bot", async (req, res) => {
+        res.json({ success: true, message: "Reiniciando..." });
+        setTimeout(() => process.exit(0), 1000);
+    });
 
-                // Registrar páginas HTML
-                serveHtmlPage("/dashboard", "dashboard.html");
-                serveHtmlPage("/webreset", "webreset.html");
-                serveHtmlPage("/variables", "variables.html");
+    app.post("/api/delete-session", async (req, res) => {
+        const type = req.body.type || 'groups';
+        await deleteSessionFromDb(type);
+        res.json({ success: true });
+    });
 
-                // Ruta explícita para webchat para evitar conflictos
-                polkaApp.get("/webchat", (req, res) => {
-                    console.log(`[DEBUG] Explicit request for /webchat`);
-                    const htmlPath = path.join(process.cwd(), 'src', 'html', 'webchat.html');
-                    if (fs.existsSync(htmlPath)) {
-                        res.sendFile(htmlPath);
-                    } else {
-                        // Fallback a la lógica de serveHtmlPage si no está en la ruta esperada
-                        const possiblePaths = [
-                            path.join(process.cwd(), 'html', 'webchat.html'),
-                            path.join(__dirname, 'html', 'webchat.html'),
-                            path.join(__dirname, '..', 'src', 'html', 'webchat.html')
-                        ];
-                        let found = false;
-                        for (const p of possiblePaths) {
-                            if (fs.existsSync(p)) {
-                                res.sendFile(p);
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (!found) {
-                            res.status(404).send("Webchat HTML no encontrado");
-                        }
-                    }
-                });
+    app.get("/qr.png", (req, res) => {
+        const p = path.join(process.cwd(), 'bot.groups.qr.png');
+        if (fs.existsSync(p)) res.sendFile(p);
+        else res.status(404).send('Not Found');
+    });
 
-                // API Endpoints para el Dashboard
-                polkaApp.get("/api/dashboard-status", (req, res) => {
-                    try {
-                        const sessionsDir = path.join(process.cwd(), 'bot_sessions');
-                        const active = fs.existsSync(sessionsDir) && fs.readdirSync(sessionsDir).length > 0;
-                        res.json({ success: true, active });
-                    } catch (err) {
-                        res.json({ success: false, error: err.message });
-                    }
-                });
+    const bridge = new AssistantBridge();
+    bridge.setupWebChat(app, adapterProvider.server.server);
 
-                polkaApp.get("/api/assistant-name", (req, res) => {
-                    res.json({ name: process.env.ASSISTANT_NAME || 'Asistente demo' });
-                });
+    app.post('/webchat-api', async (req, res) => {
+        if (req.body && req.body.message) {
+            const { message } = req.body;
+            const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+            const session = webChatManager.getSession(ip);
+            const { getOrCreateThreadId, sendMessageToThread } = await import('./utils-web/openaiThreadBridge');
+            const threadId = await getOrCreateThreadId(session);
+            const assigned = userAssignedAssistant.get(ip) || 'asistente1';
+            const reply = await sendMessageToThread(threadId, message, ASSISTANT_MAP[assigned]);
+            res.json({ reply: String(reply).replace(/GET_RESUMEN[\s\S]+/i, '').trim() });
+        }
+    });
 
-                polkaApp.get("/api/variables", async (req, res) => {
-                    try {
-                        const variables = await RailwayApi.getVariables();
-                        if (variables) {
-                            res.json({ success: true, variables });
-                        } else {
-                            // Fallback a process.env si falla la API
-                            const vars = {};
-                            const keys = [
-                                'ASSISTANT_NAME', 'ASSISTANT_1', 'ASSISTANT_2', 'ASSISTANT_3', 'ASSISTANT_4', 'ASSISTANT_5', 'ASSISTANT_ID_IMG', 'OPENAI_API_KEY', 'OPENAI_API_KEY_IMG',
-                                'ID_GRUPO_RESUMEN', 'ID_GRUPO_RESUMEN_2', 'msjCierre', 'timeOutCierre',
-                                'msjSeguimiento1', 'msjSeguimiento2', 'timeOutSeguimiento2', 'msjSeguimiento3', 'timeOutSeguimiento3',
-                                'GOOGLE_CLIENT_EMAIL', 'GOOGLE_PRIVATE_KEY', 'GOOGLE_MAPS_API_KEY', 'GOOGLE_CALENDAR_ID',
-                                'SHEET_ID_UPDATE', 'SHEET_ID_RESUMEN', 'DOCX_ID_UPDATE', 'VECTOR_STORE_ID',
-                                'SUPABASE_URL', 'SUPABASE_KEY', 'RAILWAY_TOKEN', 'RAILWAY_PROJECT_ID', 'RAILWAY_ENVIRONMENT_ID', 'RAILWAY_SERVICE_ID'
-                            ];
-                            keys.forEach(k => { vars[k] = process.env[k] || ''; });
-                            res.json({ success: true, variables: vars });
-                        }
-                    } catch (err) {
-                        res.status(500).json({ success: false, error: err.message });
-                    }
-                });
-
-                polkaApp.post("/api/update-variables", async (req, res) => {
-                    try {
-                        const { variables } = req.body;
-                        if (!variables) return res.status(400).json({ success: false, error: 'No variables provided' });
-                        
-                        const result = await RailwayApi.updateVariables(variables);
-                        if (result.success) {
-                            res.json({ success: true });
-                        } else {
-                            res.status(500).json({ success: false, error: result.error });
-                        }
-                    } catch (err) {
-                        res.status(500).json({ success: false, error: err.message });
-                    }
-                });
-
-                polkaApp.post("/api/delete-session", async (req, res) => {
-                    try {
-                        await deleteSessionFromDb();
-                        const sessionsDir = path.join(process.cwd(), 'bot_sessions');
-                        if (fs.existsSync(sessionsDir)) {
-                            fs.rmSync(sessionsDir, { recursive: true, force: true });
-                        }
-                        res.json({ success: true });
-                    } catch (err) {
-                        res.status(500).json({ success: false, error: err.message });
-                    }
-                });
-
-                polkaApp.post("/api/restart-bot", async (req, res) => {
-                    try {
-                        const result = await RailwayApi.restartActiveDeployment();
-                        if (result.success) {
-                            res.json({ success: true, message: "Reinicio solicitado correctamente." });
-                        } else {
-                            res.status(500).json({ success: false, error: result.error || "Error desconocido" });
-                        }
-                    } catch (err) {
-                        res.status(500).json({ success: false, error: err.message });
-                    }
-                });
-
-                polkaApp.get("/qr.png", (req, res) => {
-                    const qrPath = path.join(process.cwd(), 'bot.qr.png');
-                    if (fs.existsSync(qrPath)) {
-                        res.sendFile(qrPath);
-                    } else {
-                        res.status(404).send('QR no generado aún');
-                    }
-                });
-
-                // Obtener el servidor HTTP real de BuilderBot después de httpInject
-                const realHttpServer = adapterProvider.server.server;
-
-                // Integrar AssistantBridge si es necesario
-                const assistantBridge = new AssistantBridge();
-                assistantBridge.setupWebChat(polkaApp, realHttpServer);
-
-                                polkaApp.post('/webchat-api', async (req, res) => {
-                                    console.log('Llamada a /webchat-api'); // log para debug
-                                    // Si el body ya está disponible (por ejemplo, con body-parser), úsalo directamente
-                                    if (req.body && req.body.message) {
-                                        console.log('Body recibido por body-parser:', req.body); // debug
-                                        try {
-                                            const message = req.body.message;
-                                            console.log('Mensaje recibido en webchat:', message); // debug
-                                            let ip = '';
-                                            const xff = req.headers['x-forwarded-for'];
-                                            if (typeof xff === 'string') {
-                                                ip = xff.split(',')[0];
-                                            } else if (Array.isArray(xff)) {
-                                                ip = xff[0];
-                                            } else {
-                                                ip = req.socket.remoteAddress || '';
-                                            }
-                                            // Crear un ctx similar al de WhatsApp, usando el IP como 'from'
-                                            const ctx = {
-                                                from: ip,
-                                                body: message,
-                                                type: 'webchat',
-                                                // Puedes agregar más propiedades si tu lógica lo requiere
-                                            };
-                                            // Usar la lógica principal del bot (processUserMessage)
-                                            let replyText = '';
-                                            // Simular flowDynamic para capturar la respuesta
-                                            const flowDynamic = async (arr) => {
-                                                if (Array.isArray(arr)) {
-                                                    replyText = arr.map(a => a.body).join('\n');
-                                                } else if (typeof arr === 'string') {
-                                                    replyText = arr;
-                                                }
-                                            };
-                                                // Usar WebChatManager y WebChatSession para gestionar la sesión webchat
-                                                const { getOrCreateThreadId, sendMessageToThread, deleteThread } = await import('./utils-web/openaiThreadBridge');
-                                                const session = webChatManager.getSession(ip);
-                                                if (message.trim().toLowerCase() === "#reset" || message.trim().toLowerCase() === "#cerrar") {
-                                                    await deleteThread(session);
-                                                    session.clear();
-                                                    replyText = "🔄 El chat ha sido reiniciado. Puedes comenzar una nueva conversación.";
-                                                } else {
-                                                    // Asignar el asistente actual igual que WhatsApp
-                                                    const assigned = userAssignedAssistant.get(ip) || 'asistente1';
-                                                    const assistantId = ASSISTANT_MAP[assigned];
-                                                    session.addUserMessage(message);
-                                                    const threadId = await getOrCreateThreadId(session);
-                                                    let reply = await sendMessageToThread(threadId, message, assistantId);
-                                                    let destino = analizarDestinoRecepcionista(reply);
-                                                    // Si hay una derivación clara y es a un asistente DIFERENTE al actual, actualizar y volver a consultar
-                                                    if (destino && ASSISTANT_MAP[destino] && destino !== assigned) {
-                                                        userAssignedAssistant.set(ip, destino);
-                                                        // Reconsultar al nuevo asistente para esta misma interacción
-                                                        reply = await sendMessageToThread(threadId, message, ASSISTANT_MAP[destino]);
-                                                        destino = analizarDestinoRecepcionista(reply); // por si hay doble derivación
-                                                    }
-                                                    // Limpiar la respuesta para el usuario
-                                                    const respuestaSinResumen = String(reply)
-                                                        .replace(/GET_RESUMEN[\s\S]+/i, '')
-                                                        .replace(/^derivar(?:ndo)? a (asistente\s*[1-5]|asesor humano)\.?$/gim, '')
-                                                        .replace(/\[Enviando.*$/gim, '')
-                                                        .replace(/^[ \t]*\n/gm, '')
-                                                        .trim();
-                                                    session.addAssistantMessage(reply);
-                                                    replyText = respuestaSinResumen;
-                                            }
-                                            res.setHeader('Content-Type', 'application/json');
-                                            res.end(JSON.stringify({ reply: replyText }));
-                                        } catch (err) {
-                                            console.error('Error en /webchat-api:', err); // debug
-                                            res.statusCode = 500;
-                                            res.end(JSON.stringify({ reply: 'Hubo un error procesando tu mensaje.' }));
-                                        }
-                                    } else {
-                                        // Fallback manual si req.body no está disponible
-                                        let body = '';
-                                        req.on('data', chunk => { body += chunk; });
-                                        req.on('end', async () => {
-                                            console.log('Body recibido en /webchat-api:', body); // log para debug
-                                            try {
-                                                const { message } = JSON.parse(body);
-                                                console.log('Mensaje recibido en webchat:', message); // debug
-                                                let ip = '';
-                                                const xff = req.headers['x-forwarded-for'];
-                                                if (typeof xff === 'string') {
-                                                    ip = xff.split(',')[0];
-                                                } else if (Array.isArray(xff)) {
-                                                    ip = xff[0];
-                                                } else {
-                                                    ip = req.socket.remoteAddress || '';
-                                                }
-                                                // Centralizar historial y estado igual que WhatsApp
-                                                if (!global.webchatHistories) global.webchatHistories = {};
-                                                const historyKey = `webchat_${ip}`;
-                                                if (!global.webchatHistories[historyKey]) global.webchatHistories[historyKey] = { history: [], thread_id: null };
-                                                const _store = global.webchatHistories[historyKey];
-                                                const _history = _store.history;
-                                                const state = {
-                                                    get: function (key) {
-                                                        if (key === 'history') return _history;
-                                                        if (key === 'thread_id') return _store.thread_id;
-                                                        return undefined;
-                                                    },
-                                                    setThreadId: function (id) {
-                                                        _store.thread_id = id;
-                                                    },
-                                                    update: async function (msg, role = 'user') {
-                                                        if (_history.length > 0) {
-                                                            const last = _history[_history.length - 1];
-                                                            if (last.role === role && last.content === msg) return;
-                                                        }
-                                                        _history.push({ role, content: msg });
-                                                        if (_history.length >= 6) {
-                                                            const last3 = _history.slice(-3);
-                                                            if (last3.every(h => h.role === 'user' && h.content === msg)) {
-                                                                _history.length = 0;
-                                                                _store.thread_id = null;
-                                                            }
-                                                        }
-                                                    },
-                                                    clear: async function () { _history.length = 0; _store.thread_id = null; }
-                                                };
-                                                const provider = undefined;
-                                                const gotoFlow = () => {};
-                                                let replyText = '';
-                                                const flowDynamic = async (arr) => {
-                                                    if (Array.isArray(arr)) {
-                                                        replyText = arr.map(a => a.body).join('\n');
-                                                    } else if (typeof arr === 'string') {
-                                                        replyText = arr;
-                                                    }
-                                                };
-                                                if (message.trim().toLowerCase() === "#reset" || message.trim().toLowerCase() === "#cerrar") {
-                                                    await state.clear();
-                                                    replyText = "🔄 El chat ha sido reiniciado. Puedes comenzar una nueva conversación.";
-                                                } else {
-                                                    // ...thread_id gestionado por openaiThreadBridge, no es necesario actualizar aquí...
-                                                }
-                                                res.setHeader('Content-Type', 'application/json');
-                                                res.end(JSON.stringify({ reply: replyText }));
-                                            } catch (err) {
-                                                console.error('Error en /webchat-api:', err); // debug
-                                                res.statusCode = 500;
-                                                res.end(JSON.stringify({ reply: 'Hubo un error procesando tu mensaje.' }));
-                                            }
-                                        });
-                                    }
-                                });
-
-            // No llamar a listen, BuilderBot ya inicia el servidor
-
-    // ...existing code...
-    httpServer(+PORT);
+    try {
+        httpServer(+PORT);
+        console.log(`🚀 [Server] Bot listo en puerto ${PORT}`);
+    } catch (err) {
+        console.error('❌ [Server] Error al iniciar httpServer:', err);
+    }
 };
 
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-export {
-    welcomeFlowTxt,
-    welcomeFlowVoice,
-    welcomeFlowImg,
-    welcomeFlowDoc,
-    locationFlow,
-    handleQueue,
-    userQueues,
-    userLocks,
-    userAssignedAssistant,
-    processUserMessage
-};
-
-main();
-
-//ok
+main().catch(console.error);
