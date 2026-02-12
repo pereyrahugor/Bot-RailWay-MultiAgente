@@ -97,30 +97,24 @@ const welcomeFlowImg = addKeyword(EVENTS.MEDIA).addAction(
 
       await state.update({ lastImage: localPath });
       const buffer = fs.default.readFileSync(localPath);
-      const imgurRes = await axios.post(
-        "https://api.imgur.com/3/image",
-        {
-          image: buffer.toString("base64"),
-          type: "base64",
-        },
-        {
-          headers: {
-            Authorization: `Client-ID ${IMGUR_CLIENT_ID}`,
-          },
-        }
-      );
-      const imgUrl = imgurRes.data.data.link;
+      const file = await openai.files.create({
+        file: fs.default.createReadStream(localPath),
+        purpose: "vision",
+      });
+
       const assistantId = process.env.ASSISTANT_ID_IMG;
       if (!assistantId) {
         await flowDynamic("No se encontró el ASSISTANT_ID_IMG en las variables de entorno.");
         return;
       }
+
       const thread = await openai.beta.threads.create({
         messages: [
           {
             role: "user",
             content: [
-              { type: "image_url", image_url: { url: imgUrl } },
+              { type: "text", text: "Describe esta imagen en detalle para poder procesar la solicitud del usuario de manera profesional." },
+              { type: "image_file", image_file: { file_id: file.id } },
             ],
           },
         ],
