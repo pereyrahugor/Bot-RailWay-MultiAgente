@@ -5,13 +5,14 @@ import fs from 'fs';
 import bodyParser from 'body-parser';
 import QRCode from 'qrcode';
 import "dotenv/config";
+
 import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@builderbot/bot";
 import { MemoryDB } from "@builderbot/bot";
 import { YCloudProvider } from "./providers/YCloudProvider";
 import { BaileysProvider } from "builderbot-provider-sherpa";
 import { adapterProvider, groupProvider, setAdapterProvider, setGroupProvider } from "./providers/instances";
 import { restoreSessionFromDb, startSessionSync, deleteSessionFromDb, isSessionInDb } from "./utils/sessionSync";
-import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
+import { toAsk } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
 import { idleFlow } from "./Flows/idleFlow";
 import { welcomeFlowTxt } from "./Flows/welcomeFlowTxt";
@@ -19,6 +20,7 @@ import { welcomeFlowVoice } from "./Flows/welcomeFlowVoice";
 import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
 import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
 import { locationFlow } from "./Flows/locationFlow";
+import { welcomeFlowVideo } from "./Flows/welcomeFlowVideo";
 import { AssistantResponseProcessor } from "./utils/AssistantResponseProcessor";
 import { updateMain } from "./addModule/updateMain";
 import { ErrorReporter } from "./utils/errorReporter";
@@ -27,6 +29,15 @@ import { WebChatManager } from "./utils-web/WebChatManager";
 import { fileURLToPath } from 'url';
 import { RailwayApi } from "./Api-RailWay/Railway";
 import { getArgentinaDatetimeString } from "./utils/ArgentinaTime";
+import { userQueues, userLocks, userAssignedAssistant, handleQueue, setProcessUserMessage } from "./utils/queue";
+import { ASSISTANT_MAP, analizarDestinoRecepcionista, extraerResumenRecepcionista } from "./utils/assistantUtils";
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+});
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err);
+});
 
 // Definir __dirname para ES modules
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -37,34 +48,10 @@ const webChatManager = new WebChatManager();
 const PORT = process.env.PORT || 8080;
 const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_WS ?? "";
 
-export const userQueues = new Map();
-export const userLocks = new Map();
-// Mapa para persistir el asistente asignado a cada usuario
-export const userAssignedAssistant = new Map();
-
 // Estado global para encender/apagar el bot
-let botEnabled = true;
+const botEnabled = true;
 
 let errorReporter;
-
-/**
- * Maneja la cola de mensajes por usuario para evitar condiciones de carrera
- */
-export const handleQueue = async (userId) => {
-    const queue = userQueues.get(userId);
-    if (!queue || userLocks.get(userId)) return;
-
-    userLocks.set(userId, true);
-    while (queue.length > 0) {
-        const { ctx, flowDynamic, state, provider, gotoFlow } = queue.shift();
-        try {
-            await processUserMessage(ctx, { flowDynamic, state, provider, gotoFlow });
-        } catch (error) {
-            console.error(`Error procesando el mensaje de ${userId}:`, error);
-        }
-    }
-    userLocks.set(userId, false);
-};
 
 // Función auxiliar para verificar el estado de ambos proveedores
 const getBotStatus = async () => {
@@ -162,33 +149,7 @@ const ASSISTANT_1 = process.env.ASSISTANT_1;
 const ASSISTANT_2 = process.env.ASSISTANT_2; 
 const ASSISTANT_3 = process.env.ASSISTANT_3; 
 const ASSISTANT_4 = process.env.ASSISTANT_4; 
-const ASSISTANT_5 = process.env.ASSISTANT_5; 
-
-export const ASSISTANT_MAP = {
-    asistente1: ASSISTANT_1,
-    asistente2: ASSISTANT_2,
-    asistente3: ASSISTANT_3,
-    asistente4: ASSISTANT_4,
-    asistente5: ASSISTANT_5,
-};
-
-export function analizarDestinoRecepcionista(respuesta) {
-    const lower = respuesta.toLowerCase();
-    if (/derivar(?:ndo)?\s+a\s+asistente\s*1\b/.test(lower)) return 'asistente1';
-    if (/derivar(?:ndo)?\s+a\s+asistente\s*2\b/.test(lower)) return 'asistente2';
-    if (/derivar(?:ndo)?\s+a\s+asistente\s*3\b/.test(lower)) return 'asistente3';
-    if (/derivar(?:ndo)?\s+a\s+asistente\s*4\b/.test(lower)) return 'asistente4'; 
-    if (/derivar(?:ndo)?\s+a\s+asistente\s*5\b/.test(lower)) return 'asistente5';
-    if (/derivar|derivando/.test(lower)) return 'ambiguous';
-    return null;
-}
-
-export function extraerResumenRecepcionista(respuesta) {
-    const match = respuesta.match(/GET_RESUMEN[\s\S]+/i);
-    return match ? match[0].trim() : "Continúa con la atención del cliente.";
-}
-
-const processUserMessage = async (
+export const processUserMessage = async (
     ctx,
     { flowDynamic, state, provider, gotoFlow }
 ) => {
@@ -202,12 +163,12 @@ const processUserMessage = async (
     try {
         const assigned = userAssignedAssistant.get(ctx.from) || 'asistente1';
         const response = await getAssistantResponse(
-            ASSISTANT_MAP[assigned],
+            (ASSISTANT_MAP[assigned] as string),
             ctx.body,
             state,
             "Por favor, responde aunque sea brevemente.",
             ctx.from
-        );
+        ) as string;
         if (!response) {
             await errorReporter.reportError(
                 new Error("No se recibió respuesta del asistente."),
@@ -231,20 +192,20 @@ const processUserMessage = async (
             userAssignedAssistant.set(ctx.from, destino);
             if (respuestaSinResumen) {
                 await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                    respuestaSinResumen, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_MAP[assigned]
+                    respuestaSinResumen, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, (ASSISTANT_MAP[assigned] as string)
                 );
             }
             const respuestaDestino = await getAssistantResponse(
-                ASSISTANT_MAP[destino], resumen, state, "Por favor, responde.", ctx.from
+                (ASSISTANT_MAP[destino] as string), resumen, state, "Por favor, responde.", ctx.from
             );
             await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                String(respuestaDestino).trim(), ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_MAP[destino]
+                String(respuestaDestino).trim(), ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, (ASSISTANT_MAP[destino] as string)
             );
             return state;
         } else {
             if (respuestaSinResumen) {
                 await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                    respuestaSinResumen, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, ASSISTANT_MAP[assigned]
+                    respuestaSinResumen, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, (ASSISTANT_MAP[assigned] as string)
                 );
             }
             return state;
@@ -255,6 +216,8 @@ const processUserMessage = async (
         return (ctx.type === EVENTS.VOICE_NOTE) ? gotoFlow(welcomeFlowVoice) : gotoFlow(welcomeFlowTxt);
     }
 };
+
+setProcessUserMessage(processUserMessage);
 
 const main = async () => {
     // QR Cleanup
@@ -300,19 +263,22 @@ const main = async () => {
 
     await updateMain();
 
-    const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowDoc, locationFlow, idleFlow]);
+    console.log('[Main] Iniciando configuración de bot...');
+    const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowDoc, locationFlow, idleFlow, welcomeFlowVideo]);
     const adapterDB = new MemoryDB();
 
+    console.log('[Main] Llamando a createBot...');
     const { httpServer } = await createBot({
         flow: adapterFlow,
         provider: adapterProvider,
         database: adapterDB,
     });
+    console.log('[Main] createBot finalizado.');
 
     errorReporter = new ErrorReporter(groupProvider, ID_GRUPO_RESUMEN);
 
     startSessionSync('groups');
-    httpInject(adapterProvider.server);
+    // httpInject(adapterProvider.server);
 
     const app = adapterProvider.server;
     app.use(bodyParser.json());
@@ -358,6 +324,16 @@ const main = async () => {
     app.use("/assets", serve(path.join(process.cwd(), "src", "assets")));
     
     app.post('/webhook', (req, res) => {
+        console.log('📩 [Webhook] Petición recibida:', JSON.stringify(req.body, null, 2));
+        
+        // Emitir evento al Dashboard para visualización en vivo
+        const bridge = (global as any).assistantBridge;
+        if (bridge && bridge.io) {
+            const body = req.body?.value?.messages?.[0]?.text?.body || 'Evento de sistema';
+            const from = req.body?.value?.messages?.[0]?.from || 'Desconocido';
+            bridge.io.emit('webhook_event', { type: 'message', body, from });
+        }
+
         // @ts-ignore
         adapterProvider.handleWebhook(req, res);
     });
@@ -378,6 +354,11 @@ const main = async () => {
     serveHtmlPage("/dashboard", "dashboard.html");
     serveHtmlPage("/webreset", "webreset.html");
     serveHtmlPage("/variables", "variables.html");
+
+    app.get('/dashboard', (req, res) => {
+        const dashPath = path.join(__dirname, 'html', 'dashboard-v2.html');
+        res.sendFile(dashPath);
+    });
 
     app.get("/webchat", (req, res) => {
         const p = path.join(process.cwd(), 'src', 'html', 'webchat.html');
@@ -419,8 +400,7 @@ const main = async () => {
         else res.status(404).send('Not Found');
     });
 
-    const bridge = new AssistantBridge();
-    bridge.setupWebChat(app, adapterProvider.server.server);
+    // AssistantBridge se configurará después de iniciar el httpServer
 
     app.post('/webchat-api', async (req, res) => {
         if (req.body && req.body.message) {
@@ -436,10 +416,28 @@ const main = async () => {
     });
 
     try {
-        httpServer(+PORT);
+        const serverInstance = httpServer(+PORT);
         console.log(`🚀 [Server] Bot listo en puerto ${PORT}`);
+
+        // Configurar Bridge de WebChat
+        const bridge = new AssistantBridge();
+        (global as any).assistantBridge = bridge;
+        
+        // Intentar extraer el servidor HTTP real de diversas formas
+        // 1. Del retorno de httpServer()
+        // 2. De adapterProvider.server.server (Polka)
+        // 3. Del objeto adapterProvider.server mismo (Express)
+        const webServer = (serverInstance as any)?.server || (adapterProvider.server as any)?.server || adapterProvider.server;
+        
+        if (webServer && (webServer.listeners || typeof webServer.on === 'function')) {
+            console.log(`[Main] Inicializando AssistantBridge...`);
+            bridge.setupWebChat(app, webServer);
+            console.log('✅ [WebChat] Bridge configurado.');
+        } else {
+            console.warn('⚠️ [WebChat] No se pudo determinar un servidor válido. Socket.io podría no funcionar.');
+        }
     } catch (err) {
-        console.error('❌ [Server] Error al iniciar httpServer:', err);
+        console.error('❌ [Server] Error al iniciar httpServer:', err.stack || err);
     }
 };
 

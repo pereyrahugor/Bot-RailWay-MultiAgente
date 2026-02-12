@@ -6,7 +6,8 @@ import fs from 'fs';
 import path from 'path';
 import { ReconectionFlow } from './reconectionFlow';
 import { groupProvider } from '../providers/instances';
-import { userAssignedAssistant, ASSISTANT_MAP } from '../app';
+import { ASSISTANT_MAP } from '../utils/assistantUtils';
+import { userAssignedAssistant } from '../utils/queue';
 
 //** Variables de entorno para el envio de msj de resumen a grupo de WS */
 const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_WS ?? process.env.ID_GRUPO_RESUMEN ?? '';
@@ -89,7 +90,9 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                                     try {
                                         await groupProvider.sendImage(targetGroup, lastImage);
                                         fs.unlinkSync(lastImage);
-                                    } catch (e) {}
+                                    } catch (e) {
+                                        console.error(`[idleFlow] Error enviando imagen:`, e);
+                                    }
                                 }, 2000);
                             }
 
@@ -98,7 +101,9 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
                                     try {
                                         await groupProvider.sendVideo(targetGroup, lastVideo);
                                         fs.unlinkSync(lastVideo);
-                                    } catch (e) {}
+                                    } catch (e) {
+                                        console.error(`[idleFlow] Error enviando video:`, e);
+                                    }
                                 }, 2500);
                             }
                         }

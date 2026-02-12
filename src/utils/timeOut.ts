@@ -1,5 +1,5 @@
 import { BotContext, TFlow } from '@builderbot/bot/dist/types';
-import { idleFlow } from '~/Flows/idleFlow';
+import { idleFlow } from '../Flows/idleFlow';
 import "dotenv/config";
 
 // Object to store timers for each user

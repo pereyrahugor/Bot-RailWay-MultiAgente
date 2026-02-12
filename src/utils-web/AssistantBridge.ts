@@ -20,10 +20,19 @@ export class AssistantBridge {
   constructor() {}
 
   // Inicializa el webchat en el servidor principal
-  public setupWebChat(app: any, server: http.Server) {
-    // Servir el archivo webchat.html en /webchat (Polka no tiene sendFile)
+  public setupWebChat(app: any, server: any) {
+    let httpServer = server;
+    // Si el servidor pasado tiene .server (como Polka), lo usamos prioritariamente
+    if (server && server.server && typeof (server.server as any).listeners === 'function') {
+      httpServer = server.server;
+    }
 
-    this.io = new Server(server, {
+    if (!httpServer || typeof (httpServer as any).listeners !== 'function') {
+      console.warn('[AssistantBridge] Advertencia: No se detectó un servidor HTTP nativo. Saltando Socket.io por ahora.');
+      return;
+    }
+
+    this.io = new Server(httpServer, {
       cors: { origin: "*" }
     });
 
@@ -92,7 +101,6 @@ export class AssistantBridge {
               state.setThreadId(ctx.lastThreadId);
             }
           }
-          socket.emit('reply', replyText);
           socket.emit('reply', replyText);
           this.saveMessage(msg, 'frontend');
           this.saveMessage(replyText, 'assistant');

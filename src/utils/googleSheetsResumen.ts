@@ -7,9 +7,12 @@ import { GenericResumenData } from "./extractJsonData";
 
 
 // Construir credenciales desde variables de entorno
+const privateKey = (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
+
 const credentials = {
-    client_email: process.env.GOOGLE_CLIENT_EMAIL,
-    private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    client_email: clientEmail,
+    private_key: privateKey,
 };
 
 const auth = new google.auth.GoogleAuth({

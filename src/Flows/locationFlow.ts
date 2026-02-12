@@ -8,7 +8,7 @@
  */
 import { Client } from "@googlemaps/google-maps-services-js";
 import { addKeyword, EVENTS } from "@builderbot/bot";
-import { userQueues, userLocks, handleQueue } from "../app";
+import { userQueues, userLocks, handleQueue } from "../utils/queue";
 import { reset } from "../utils/timeOut";
 
 const setTime = Number(process.env.timeOutCierre) * 60 * 1000;

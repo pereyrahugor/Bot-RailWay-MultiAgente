@@ -1,6 +1,6 @@
 import { addKeyword, EVENTS } from "@builderbot/bot";
 import { reset } from "../utils/timeOut";
-import { handleQueue, userQueues, userLocks } from "../app";
+import { handleQueue, userQueues, userLocks } from "../utils/queue";
 import * as fs from 'fs';
 
 const setTime = Number(process.env.timeOutCierre) * 60 * 1000;

@@ -2,7 +2,7 @@ import { addKeyword, EVENTS } from "@builderbot/bot";
 import { BaileysProvider } from "@builderbot/provider-baileys";
 import { MemoryDB } from "@builderbot/bot";
 import { reset } from "../utils/timeOut";
-import { handleQueue, userQueues, userLocks } from "../app";
+import { handleQueue, userQueues, userLocks } from "../utils/queue";
 const setTime = Number(process.env.timeOutCierre) * 60 * 1000; // tiempo configurable desde .env
 
 export const welcomeFlowTxt = addKeyword<BaileysProvider, MemoryDB>(EVENTS.WELCOME)

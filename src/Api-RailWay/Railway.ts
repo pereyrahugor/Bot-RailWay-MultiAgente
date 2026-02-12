@@ -7,8 +7,8 @@ const RAILWAY_ENVIRONMENT_ID = process.env.RAILWAY_ENVIRONMENT_ID;
 const RAILWAY_SERVICE_ID = process.env.RAILWAY_SERVICE_ID;
 
 if (!RAILWAY_TEAM_TOKEN || !RAILWAY_PROJECT_ID || !RAILWAY_ENVIRONMENT_ID || !RAILWAY_SERVICE_ID) {
-  throw new Error(
-    "Faltan variables de entorno: RAILWAY_TEAM_TOKEN, RAILWAY_PROJECT_ID, RAILWAY_ENVIRONMENT_ID o RAILWAY_SERVICE_ID"
+  console.warn(
+    "⚠️ [RailwayApi] Faltan variables de entorno de Railway: RAILWAY_TOKEN, RAILWAY_PROJECT_ID, RAILWAY_ENVIRONMENT_ID o RAILWAY_SERVICE_ID. Algunas funciones del dashboard no estarán disponibles."
   );
 }
 

@@ -1,7 +1,8 @@
 // Clase para manejar la lógica de reconexión cuando el campo nombre está vacío
 import { toAsk } from '@builderbot-plugins/openai-assistants';
-import { extraerDatosResumen, GenericResumenData } from '~/utils/extractJsonData';
-import { analizarDestinoRecepcionista, ASSISTANT_MAP, userAssignedAssistant } from "../app";
+import { extraerDatosResumen, GenericResumenData } from '../utils/extractJsonData';
+import { analizarDestinoRecepcionista, ASSISTANT_MAP } from "../utils/assistantUtils";
+import { userAssignedAssistant } from "../utils/queue";
 
 // Opciones para configurar el flujo de reconexión
 interface ReconectionOptions {

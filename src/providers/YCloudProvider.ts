@@ -39,7 +39,7 @@ class YCloudProvider extends ProviderClass {
             
             if (!media) return null;
 
-            let fileUrl = media.link || media.url;
+            const fileUrl = media.link || media.url;
             
             // Si no hay URL directa pero hay ID (formato Meta), habría que usar la API de Meta para descargar.
             // Por simplicidad y asumiendo que YCloud entrega links o que manejamos el ID como link en algunos casos:

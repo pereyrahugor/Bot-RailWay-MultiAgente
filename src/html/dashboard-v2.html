@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Dashboard | Meta AI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0a0b10;
+            --card-bg: rgba(255, 255, 255, 0.03);
+            --accent-primary: #00d2ff;
+            --accent-secondary: #3a7bd5;
+            --text-main: #e0e0e0;
+            --text-dim: #a0a0a0;
+            --success: #00ff9d;
+            --warning: #ffcc00;
+            --error: #ff4b2b;
+            --glass: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: radial-gradient(circle at top right, #1a2a6c, #b21f1f, #fdbb2d);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(10px);
+            z-index: -1;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+        }
+
+        .bot-identity h1 {
+            font-size: 1.5rem;
+            background: linear-gradient(to right, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            padding: 0.5rem 1rem;
+            background: rgba(0, 210, 255, 0.1);
+            border-radius: 50px;
+            border: 1px solid var(--accent-primary);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 10px var(--success);
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 1.5rem;
+        }
+
+        .card {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 1.5rem;
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        h2 {
+            font-size: 1rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--accent-primary);
+        }
+
+        /* Console Section */
+        .console-container {
+            grid-row: span 2;
+            display: flex;
+            flex-direction: column;
+            background: #000 !important;
+            border: 1px solid #333;
+            height: 600px;
+        }
+
+        .console-header {
+            padding: 0.5rem 1rem;
+            background: #111;
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+        }
+
+        #console-output {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.4;
+            color: #d0d0d0;
+        }
+
+        .log-entry { margin-bottom: 0.5rem; border-left: 2px solid #333; padding-left: 0.5rem; }
+        .log-time { color: var(--text-dim); font-size: 0.7rem; margin-right: 0.5rem; }
+        .log-tag { color: var(--accent-primary); margin-right: 0.5rem; }
+        .log-msg-in { color: var(--success); }
+        .log-msg-out { color: var(--accent-secondary); }
+
+        /* Stats & Values */
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .stat-label { color: var(--text-dim); font-size: 0.9rem; }
+        .stat-value { font-weight: 600; color: var(--text-main); }
+
+        .btn {
+            width: 100%;
+            padding: 0.75rem;
+            margin-top: 1rem;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(to right, var(--accent-primary), var(--accent-secondary));
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn:hover {
+            filter: brightness(1.2);
+            box-shadow: 0 5px 15px rgba(0, 210, 255, 0.3);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--glass-border);
+            color: var(--text-main);
+        }
+
+        .btn-outline:hover {
+            background: var(--glass-border);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+
+    </style>
+</head>
+<body>
+    <div class="overlay"></div>
+    <div class="container">
+        <header>
+            <div class="bot-identity">
+                <h1 id="bot-name">Cargando...</h1>
+                <p style="color: var(--text-dim); font-size: 0.8rem;">YCloud Meta Integration v2.0</p>
+            </div>
+            <div class="status-badge">
+                <div class="dot"></div>
+                <span>SYSTEM ONLINE</span>
+            </div>
+        </header>
+
+        <div class="main-grid">
+            <!-- Left Panel -->
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                <div class="card">
+                    <h2>📡 Webhook Status</h2>
+                    <div class="stat-row">
+                        <span class="stat-label">Provider</span>
+                        <span class="stat-value">YCloud Meta</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Endpoint</span>
+                        <span class="stat-value" id="webhook-url">/webhook</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Auth</span>
+                        <span class="stat-value" style="color: var(--success)">ACTIVE</span>
+                    </div>
+                    <button class="btn btn-outline" onclick="window.location.href='/webchat'">Open WebChat</button>
+                    <button class="btn" onclick="copyWebhook()">Copiar URL Webhook</button>
+                </div>
+
+                <div class="card">
+                    <h2>⚙️ Control Panel</h2>
+                    <div class="stat-row">
+                        <span class="stat-label">Model</span>
+                        <span class="stat-value">OpenAI gpt-4o</span>
+                    </div>
+                    <button class="btn btn-outline" style="border-color: var(--warning); color: var(--warning);" onclick="restartBot()">Reiniciar Servicio</button>
+                    <button class="btn btn-outline" style="border-color: var(--error); color: var(--error);" onclick="confirmDelete()">Borrar Sesiones (Reset)</button>
+                </div>
+            </div>
+
+            <!-- Right Panel: Live Console -->
+            <div class="card console-container">
+                <div class="console-header">
+                    <span>LIVE WEBHOOK INTERCEPTOR</span>
+                    <span id="socket-status" style="color: var(--text-dim)">Connecting...</span>
+                </div>
+                <div id="console-output">
+                    <div class="log-entry">
+                        <span class="log-time">[${new Date().toLocaleTimeString()}]</span>
+                        <span class="log-tag">SYSTEM</span>
+                        <span>Esperando tráfico de YCloud...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const consoleOutput = document.getElementById('console-output');
+        const socketStatus = document.getElementById('socket-status');
+
+        socket.on('connect', () => {
+            socketStatus.innerText = 'Connected';
+            socketStatus.style.color = '#00ff9d';
+        });
+
+        socket.on('disconnect', () => {
+            socketStatus.innerText = 'Disconnected';
+            socketStatus.style.color = '#ff4b2b';
+        });
+
+        // Interceptamos eventos desde el servidor
+        socket.on('webhook_event', (data) => {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const time = new Date().toLocaleTimeString();
+            
+            let content = '';
+            if (data.type === 'message') {
+                content = `<span class="log-msg-in">INCOMING:</span> ${data.body} (from ${data.from})`;
+            } else if (data.type === 'reply') {
+                content = `<span class="log-msg-out">OUTGOING:</span> ${data.body}`;
+            }
+
+            entry.innerHTML = `
+                <span class="log-time">[${time}]</span>
+                <span class="log-tag">YCLOUD</span>
+                <span>${content}</span>
+            `;
+            consoleOutput.appendChild(entry);
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        });
+
+        async function fetchInfo() {
+            try {
+                const res = await fetch('/api/assistant-name');
+                const data = await res.json();
+                document.getElementById('bot-name').innerText = data.name || 'Bot MultiAgente';
+                document.getElementById('webhook-url').innerText = window.location.origin + '/webhook';
+            } catch (e) {}
+        }
+
+        function copyWebhook() {
+            const url = window.location.origin + '/webhook';
+            navigator.clipboard.writeText(url);
+            alert('URL copiada: ' + url);
+        }
+
+        async function restartBot() {
+            if(confirm('¿Desea reiniciar el bot?')) {
+                await fetch('/api/restart-bot', { method: 'POST' });
+                alert('Reiniciando...');
+            }
+        }
+
+        async function confirmDelete() {
+            if(confirm('ATENCIÓN: Se borrarán todas las sesiones. ¿Continuar?')) {
+                await fetch('/api/delete-session', { method: 'POST' });
+                alert('Sesiones eliminadas.');
+            }
+        }
+
+        fetchInfo();
+    </script>
+</body>
+</html>
