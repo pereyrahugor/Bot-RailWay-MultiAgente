@@ -97,60 +97,27 @@ const welcomeFlowImg = addKeyword(EVENTS.MEDIA).addAction(
 
       await state.update({ lastImage: localPath });
       const buffer = fs.default.readFileSync(localPath);
-      const file = await openai.files.create({
-        file: fs.default.createReadStream(localPath),
-        purpose: "vision",
-      });
-
-      const assistantId = process.env.ASSISTANT_ID_IMG;
-      if (!assistantId) {
-        await flowDynamic("No se encontró el ASSISTANT_ID_IMG en las variables de entorno.");
-        return;
-      }
-
-      const thread = await openai.beta.threads.create({
+      // Usar Chat Completions para visión (más estable que Assistants API para imágenes)
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
         messages: [
           {
             role: "user",
             content: [
-              { type: "text", text: "Describe esta imagen en detalle para poder procesar la solicitud del usuario de manera profesional." },
-              { type: "image_file", image_file: { file_id: file.id } },
+              { type: "text", text: "Analiza esta imagen y describe lo que ves de forma detallada pero concisa para un sistema de gestión empresarial." },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${buffer.toString("base64")}`,
+                },
+              },
             ],
           },
         ],
       });
-      const run = await openai.beta.threads.runs.create(thread.id, {
-        assistant_id: assistantId,
-      });
-      let runStatus;
-      do {
-        await new Promise((res) => setTimeout(res, 2000));
-        runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-      } while (runStatus.status !== "completed" && runStatus.status !== "failed");
-      if (runStatus.status === "failed") {
-        console.error("❌ El asistente falló al procesar la imagen.");
-        console.error("Detalle del error:", JSON.stringify(runStatus.last_error, null, 2));
-        await flowDynamic("El asistente falló al procesar la imagen.");
-        return;
-      }
-      const messages = await openai.beta.threads.messages.list(thread.id);
-      const resultMsg = messages.data.find((msg) => msg.role === "assistant");
-      let result = "No se obtuvo respuesta del asistente.";
-      if (resultMsg && Array.isArray(resultMsg.content)) {
-        const textBlock = resultMsg.content.find(
-          (block): block is { type: "text"; text: { value: string; annotations: any[] } } =>
-            block.type === "text" &&
-            typeof (block as any).text?.value === "string" &&
-            Array.isArray((block as any).text?.annotations)
-        );
-        if (
-          textBlock &&
-          typeof textBlock.text?.value === "string" &&
-          Array.isArray(textBlock.text?.annotations)
-        ) {
-          result = textBlock.text.value;
-        }
-      }
+
+      const result = response.choices[0]?.message?.content || "No se pudo analizar la imagen.";
+      console.log("🔍 Resultado Visión:", result);
       // Enviar el mensaje al asistente principal para que lo procese y mantenga el contexto
       ctx.body = `Se recibio una imagen con la siguiente información: ${result}`;
       // Reencolar el mensaje para que lo procese el flujo principal (texto)
