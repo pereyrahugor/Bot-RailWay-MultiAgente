@@ -128,6 +128,8 @@ const welcomeFlowImg = addKeyword(EVENTS.MEDIA).addAction(
         runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
       } while (runStatus.status !== "completed" && runStatus.status !== "failed");
       if (runStatus.status === "failed") {
+        console.error("❌ El asistente falló al procesar la imagen.");
+        console.error("Detalle del error:", JSON.stringify(runStatus.last_error, null, 2));
         await flowDynamic("El asistente falló al procesar la imagen.");
         return;
       }
