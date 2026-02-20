@@ -1,35 +1,14 @@
-// import { addKeyword, EVENTS } from "@builderbot/bot";
-// import { ErrorReporter } from "../utils/errorReporter";
-
-// const welcomeFlowImg = addKeyword(EVENTS.MEDIA).addAnswer(
-//   "Por un problema no puedo ver imágenes, me podrás escribir de que trata la imagen? Gracias ",
-//   { capture: false },
-//   async (ctx) => {
-//     if (!ctx?.media?.buffer || ctx.media.buffer.length === 0) {
-//       console.error("No se recibió buffer de imagen válido.");
-//       return;
-//     }
-//     console.log("Imagen recibida:", ctx);
-//     await new ErrorReporter(ctx.provider, ctx.groupId);
-//   }
-// );
-
-// export { welcomeFlowImg };
-
 import { addKeyword, EVENTS } from "@builderbot/bot";
 import { ErrorReporter } from "../utils/errorReporter";
 
 import { welcomeFlowTxt } from "./welcomeFlowTxt";
 import { welcomeFlowVideo } from "./welcomeFlowVideo";
-import axios from "axios";
 import { OpenAI } from "openai";
 import { reset } from "../utils/timeOut";
 import { handleQueue, userQueues, userLocks } from "../app";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_IMG });
-const IMGUR_CLIENT_ID = "dbe415c6bbb950d";
 const setTime = Number(process.env.timeOutCierre) * 60 * 1000;
-
 
 const welcomeFlowImg = addKeyword(EVENTS.MEDIA).addAction(
   async (ctx, { flowDynamic, provider, gotoFlow, state }) => {
@@ -97,38 +76,39 @@ const welcomeFlowImg = addKeyword(EVENTS.MEDIA).addAction(
 
       await state.update({ lastImage: localPath });
       const buffer = fs.default.readFileSync(localPath);
-      // Usar Chat Completions para visión (más estable que Assistants API para imágenes)
+      
+      console.log("Analizando imagen con GPT-4o...");
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
           {
             role: "user",
             content: [
-              { type: "text", text: "Analiza esta imagen y describe lo que ves de forma detallada pero concisa para un sistema de gestión empresarial." },
+              { type: "text", text: "Describe esta imagen detalladamente para que el asistente pueda entender su contenido y responder al usuario." },
               {
                 type: "image_url",
-                image_url: {
-                  url: `data:image/jpeg;base64,${buffer.toString("base64")}`,
-                },
+                image_url: { url: `data:image/jpeg;base64,${buffer.toString("base64")}` },
               },
             ],
           },
         ],
       });
 
-      const result = response.choices[0]?.message?.content || "No se pudo analizar la imagen.";
-      console.log("🔍 Resultado Visión:", result);
+      const result = response.choices[0].message.content || "No se pudo obtener una descripción de la imagen.";
+
       // Enviar el mensaje al asistente principal para que lo procese y mantenga el contexto
-      ctx.body = `Se recibio una imagen con la siguiente información: ${result}`;
+      ctx.body = `[Imagen recibida]: ${result}`;
+
       // Reencolar el mensaje para que lo procese el flujo principal (texto)
       if (!userQueues.has(userId)) {
         userQueues.set(userId, []);
       }
       userQueues.get(userId).push({ ctx, flowDynamic, state, provider, gotoFlow });
+      
       if (!userLocks.get(userId) && userQueues.get(userId).length === 1) {
         await handleQueue(userId);
       }
-      // Se elimina la eliminación inmediata para que idleFlow pueda reenviarla
+      
       console.log(`💾 Imagen guardada para resumen: ${localPath}`);
     } catch (err) {
       console.error("Error procesando imagen:", err);
