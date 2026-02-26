@@ -20,7 +20,7 @@ import { welcomeFlowVoice } from "./Flows/welcomeFlowVoice";
 import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
 import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
 import { locationFlow } from "./Flows/locationFlow";
-import { AssistantResponseProcessor } from "./utils/AssistantResponseProcessor";
+import { AssistantResponseProcessor, waitForActiveRuns } from "./utils/AssistantResponseProcessor";
 import { updateMain } from "./addModule/updateMain";
 //import { listImg } from "./addModule/listImg";
 import { ErrorReporter } from "./utils/errorReporter";
@@ -60,8 +60,14 @@ const userTimeouts = new Map();
 const userRetryCount = new Map();
 
 export const getAssistantResponse = async (assistantId, message, state, fallbackMessage, userId, thread_id = null) => {
+    // Obtener threadId para verificar si hay runs activos
+    const tId = thread_id || (state && state.get && typeof state.get === 'function' ? state.get('thread_id') : null);
+    if (tId) {
+        await waitForActiveRuns(tId);
+    }
+
     // Si es un nuevo hilo, envía primero la fecha y hora actual
-    if (!thread_id) {
+    if (!thread_id && !tId) {
         const fechaHoraActual = getArgentinaDatetimeString();
         const mensajeFecha = `La fecha y hora actual es: ${fechaHoraActual}`;
         await toAsk(assistantId, mensajeFecha, state);
@@ -81,6 +87,7 @@ export const getAssistantResponse = async (assistantId, message, state, fallback
       if (retries < 2) {
         userRetryCount.set(userId, retries + 1);
         console.warn(`⏱ Timeout alcanzado. Reintentando (${retries + 1}/3) con el último mensaje del usuario al asistente...`);
+        if (tId) await waitForActiveRuns(tId);
         resolve(toAsk(assistantId, message, state));
       } else {
         userRetryCount.set(userId, 0); // Reset para futuros intentos
@@ -98,6 +105,7 @@ export const getAssistantResponse = async (assistantId, message, state, fallback
   });
 
   // Lanzamos la petición a OpenAI
+  if (tId) await waitForActiveRuns(tId);
   const askPromise = toAsk(assistantId, message, state).then((result) => {
     // Si responde antes del timeout, limpiamos el timeout y el contador de reintentos
     if (userTimeouts.has(userId)) {

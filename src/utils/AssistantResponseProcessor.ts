@@ -30,28 +30,28 @@ export async function waitForActiveRuns(threadId: string) {
     try {
         console.log(`[AssistantResponseProcessor] Verificando runs activos en thread ${threadId}...`);
         let attempt = 0;
-        while (attempt < 10) { // Max 60 seconds wait
-            const runs = await openai.beta.threads.runs.list(threadId, { limit: 1 });
+        const maxAttempts = 20; // Aumentado para dar más tiempo a OpenAI
+        while (attempt < maxAttempts) {
+            const runs = await openai.beta.threads.runs.list(threadId, { limit: 5 });
             const activeRun = runs.data.find(run =>
-                ["queued", "in_progress", "cancelling"].includes(run.status)
+                ["queued", "in_progress", "cancelling", "requires_action"].includes(run.status)
             );
 
             if (activeRun) {
-                if (attempt % 5 === 0) console.log(`[AssistantResponseProcessor] Run activo detectado (${activeRun.id}, estado: ${activeRun.status}). Esperando...`);
+                console.log(`[AssistantResponseProcessor] [${attempt}/${maxAttempts}] Run activo detectado (${activeRun.id}, estado: ${activeRun.status}). Esperando 2s...`);
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 attempt++;
             } else {
-                console.log(`[AssistantResponseProcessor] No hay runs activos. Procediendo.`);
-                // Delay adicional para evitar condición de carrera
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                console.log(`[AssistantResponseProcessor] No hay runs activos. OK.`);
+                // Delay adicional para asegurar sincronización de OpenAI
+                await new Promise(resolve => setTimeout(resolve, 1500));
                 return;
             }
         }
-        console.warn(`[AssistantResponseProcessor] Timeout esperando liberación del thread ${threadId}. Intentando proceder de todos modos.`);
+        console.warn(`[AssistantResponseProcessor] Timeout esperando liberación del thread ${threadId}.`);
     } catch (error) {
         console.error(`[AssistantResponseProcessor] Error verificando runs:`, error);
-        // Fallback to simple wait if API fails
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 2000));
     }
 }
 
@@ -111,27 +111,24 @@ export class AssistantResponseProcessor {
         provider: any,
         gotoFlow: any,
         getAssistantResponse: Function,
-        assistantId: string
+        assistantId: string,
+        recursionDepth: number = 0
     ) {
-        // Soporte para tool/function call genérico
-        // if (response && typeof response === 'object' && response.tool_call) {
-        //     // Espera que response.tool_call tenga { name, parameters }
-        //     const toolResponse = handleToolFunctionCall(response.tool_call);
-        //     // Enviar la respuesta al asistente (como tool response)
-        //     await flowDynamic([{ body: JSON.stringify(toolResponse, null, 2) }]);
-        //     return;
-        // }
+        if (recursionDepth > 5) {
+            console.error('[AssistantResponseProcessor] Límite de recursión alcanzado (5). Abortando.');
+            return;
+        }
+
         // Log de mensaje entrante del asistente (antes de cualquier filtro)
         if (ctx && ctx.type === 'webchat') {
             // console.log('[Webchat Debug] Mensaje entrante del asistente:', response);
         } else {
-            // console.log('[WhatsApp Debug] Mensaje entrante del asistente:', response);
-            // Si el usuario está bloqueado por una operación API, evitar procesar nuevos mensajes
-            if (userApiBlockMap.has(ctx.from)) {
-                console.log(`[API Block] Mensaje ignorado de usuario bloqueado: ${ctx.from}`);
-                return;
-            }
+            // if (ctx && ctx.from && userApiBlockMap.has(ctx.from)) {
+            //     console.log(`[API Block] Mensaje ignorado de usuario bloqueado: ${ctx.from}`);
+            //     return;
+            // }
         }
+
         let jsonData: any = null;
         const textResponse = typeof response === "string" ? response : String(response || "");
 
@@ -141,13 +138,10 @@ export class AssistantResponseProcessor {
         } else {
             console.log('[WhatsApp Debug] Mensaje saliente al usuario (sin filtrar):', textResponse);
         }
-        // Log específico para debug de DB_QUERY
-        console.log('[DEBUG] Buscando [DB_QUERY] en:', textResponse.substring(0, 200));
 
         // 0) Detectar y procesar DB QUERY [DB_QUERY: ...]
         const dbQueryRegex = /\[DB_QUERY\s*:\s*([\s\S]*?)\]/i;
         const dbMatch = textResponse.match(dbQueryRegex);
-        console.log('[DEBUG] DB Match result:', dbMatch ? 'FOUND' : 'NULL');
         if (dbMatch) {
             const sqlQuery = dbMatch[1].trim();
             if (ctx && ctx.type === 'webchat') console.log(`[Webchat Debug] 🔄 Detectada solicitud de DB Query: ${sqlQuery}`);
@@ -156,6 +150,19 @@ export class AssistantResponseProcessor {
             // Ejecutar Query
             const queryResult = await executeDbQuery(sqlQuery);
             console.log(`[AssistantResponseProcessor] 📄 Resultado DB:`, queryResult.substring(0, 100) + '...');
+
+            // Obtener threadId de forma segura
+            let threadId = ctx && ctx.thread_id;
+            if (!threadId && state && typeof state.get === 'function') {
+                threadId = state.get('thread_id');
+            }
+
+            // Esperar a que el Run anterior haya finalizado realmente en OpenAI
+            if (threadId) {
+                await waitForActiveRuns(threadId);
+            } else {
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
 
             // Enviar resultado al asistente (NO al usuario)
             const newResponse = await getAssistantResponse(
@@ -169,7 +176,7 @@ export class AssistantResponseProcessor {
 
             // Recursión: procesar la nueva respuesta
             await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                newResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId
+                newResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId, recursionDepth + 1
             );
             return; // Terminar ejecución actual
         }
@@ -189,6 +196,19 @@ export class AssistantResponseProcessor {
             const queryResult = await executeDbQuery(sqlQuery);
             console.log(`[AssistantResponseProcessor] 📄 Resultado DB Search:`, queryResult.substring(0, 100) + '...');
 
+            // Obtener threadId de forma segura
+            let threadId = ctx && ctx.thread_id;
+            if (!threadId && state && typeof state.get === 'function') {
+                threadId = state.get('thread_id');
+            }
+
+            // Esperar a que el Run anterior haya finalizado realmente en OpenAI
+            if (threadId) {
+                await waitForActiveRuns(threadId);
+            } else {
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+
             // Enviar resultado al asistente (NO al usuario)
             const newResponse = await getAssistantResponse(
                 assistantId,
@@ -201,7 +221,7 @@ export class AssistantResponseProcessor {
 
             // Recursión: procesar la nueva respuesta
             await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                newResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId
+                newResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId, recursionDepth + 1
             );
             return; // Terminar ejecución actual
         }
@@ -211,33 +231,23 @@ export class AssistantResponseProcessor {
         const match = textResponse.match(apiBlockRegex);
         if (match) {
             const jsonStr = match[1].trim();
-            console.log('[Debug] Bloque [API] detectado:', jsonStr);
             try {
                 jsonData = JSON.parse(jsonStr);
             } catch (e) {
                 jsonData = null;
-                if (ctx && ctx.type === 'webchat') {
-                    console.log('[Webchat Debug] Error al parsear bloque [API]:', jsonStr);
-                }
             }
         }
 
         // 2) Fallback heurístico (desactivado, solo [API])
-        // jsonData = null;
         if (!jsonData) {
             jsonData = JsonBlockFinder.buscarBloquesJSONEnTexto(textResponse) || (typeof response === "object" ? JsonBlockFinder.buscarBloquesJSONProfundo(response) : null);
-            if (!jsonData && ctx && ctx.type === 'webchat') {
-                console.log('[Webchat Debug] No JSON block detected in assistant response. Raw output:', textResponse);
-            }
         }
 
         // 3) Procesar JSON si existe
         if (jsonData && typeof jsonData.type === "string") {
-            // Si es WhatsApp, bloquear usuario por 20 segundos o hasta finalizar la operación API
             let unblockUser = null;
             if (ctx && ctx.type !== 'webchat' && ctx.from) {
                 userApiBlockMap.set(ctx.from, true);
-                // Desbloqueo automático tras timeout de seguridad
                 const timeoutId = setTimeout(() => {
                     userApiBlockMap.delete(ctx.from);
                 }, API_BLOCK_TIMEOUT_MS);
@@ -246,112 +256,75 @@ export class AssistantResponseProcessor {
                     userApiBlockMap.delete(ctx.from);
                 };
             }
-            // Log para detectar canal y datos antes de enviar
-            if (ctx && ctx.type !== 'webchat') {
-                console.log('[WhatsApp Debug] Antes de enviar con flowDynamic:', jsonData, ctx.from);
-            }
+            
             const tipo = jsonData.type.trim();
+            let apiResponse: any;
 
-            if (tipo === "create_event") {
-                // 1. Extraer datos necesarios del jsonData
-                const { fecha, hora, titulo, descripcion, invitados } = jsonData;
-                // 2. Llamar a la API para crear el evento
-                let apiResponse;
-                try {
-                    apiResponse = await CalendarEvents.createEvent({
-                        fecha,
-                        hora,
-                        titulo,
-                        descripcion,
-                        invitados
-                    });
-                } catch (err) {
-                    apiResponse = { error: "Error al crear el evento: " + err.message };
-                }
-                // 3. Enviar la respuesta al asistente
-                await flowDynamic([{ body: JSON.stringify(apiResponse, null, 2) }]);
-                if (unblockUser) unblockUser();
-                return;
-            }
-
-            if (tipo === "available_event") {
-                // 1. Extraer datos necesarios del jsonData
-                const { fecha, hora } = jsonData;
-                // 2. Llamar a la API para consultar disponibilidad
-                let apiResponse;
-                try {
-                    // Construir start y end en formato ISO
+            try {
+                if (tipo === "create_event") {
+                    const { fecha, hora, titulo, descripcion, invitados } = jsonData;
+                    apiResponse = await CalendarEvents.createEvent({ fecha, hora, titulo, descripcion, invitados });
+                } else if (tipo === "available_event") {
+                    const { fecha, hora } = jsonData;
                     const start = `${fecha}T${hora}:00-03:00`;
-                    // Suponiendo duración de 1 hora para el evento
                     const startMoment = moment(start);
                     const endMoment = startMoment.clone().add(1, 'hour');
                     const end = endMoment.format('YYYY-MM-DDTHH:mm:ssZ');
                     apiResponse = await CalendarEvents.checkAvailability(start, end);
-                } catch (err) {
-                    apiResponse = { error: "Error al consultar disponibilidad: " + err.message };
-                }
-                // 3. Enviar la respuesta al asistente
-                await flowDynamic([{ body: JSON.stringify(apiResponse, null, 2) }]);
-                if (unblockUser) unblockUser();
-                return;
-            }
-
-            if (tipo === "modify_event") {
-                // 1. Extraer datos necesarios del jsonData
-                const { id, fecha, hora, titulo, descripcion } = jsonData;
-                // 2. Llamar a la API para modificar el evento
-                let apiResponse;
-                try {
-                    apiResponse = await CalendarEvents.updateEvent(
-                        id,
-                        { fecha, hora, titulo, descripcion }
-                    );
-                } catch (err) {
-                    apiResponse = { error: "Error al modificar el evento: " + err.message };
-                }
-                // 3. Enviar la respuesta al asistente
-                await flowDynamic([{ body: JSON.stringify(apiResponse, null, 2) }]);
-                if (unblockUser) unblockUser();
-                return;
-            }
-
-            if (tipo === "cancel_event") {
-                // 1. Extraer datos necesarios del jsonData
-                const { id } = jsonData;
-                // 2. Llamar a la API para cancelar el evento
-                let apiResponse;
-                try {
+                } else if (tipo === "modify_event") {
+                    const { id, fecha, hora, titulo, descripcion } = jsonData;
+                    apiResponse = await CalendarEvents.updateEvent(id, { fecha, hora, titulo, descripcion });
+                } else if (tipo === "cancel_event") {
+                    const { id } = jsonData;
                     apiResponse = await CalendarEvents.deleteEvent(id);
-                } catch (err) {
-                    apiResponse = { error: "Error al cancelar el evento: " + err.message };
                 }
-                // 3. Enviar la respuesta al asistente
-                await flowDynamic([{ body: JSON.stringify(apiResponse, null, 2) }]);
+
+                if (apiResponse) {
+                    let threadId = ctx && ctx.thread_id;
+                    if (!threadId && state && typeof state.get === 'function') {
+                        threadId = state.get('thread_id');
+                    }
+
+                    if (threadId) {
+                        await waitForActiveRuns(threadId);
+                    } else {
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
+
+                    const newResponse = await getAssistantResponse(
+                        assistantId,
+                        JSON.stringify(apiResponse, null, 2),
+                        state,
+                        undefined,
+                        ctx.from,
+                        ctx.from
+                    );
+
+                    await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
+                        newResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId, recursionDepth + 1
+                    );
+                    if (unblockUser) unblockUser();
+                    return;
+                }
+            } catch (err) {
+                console.error('[API Error]', err);
                 if (unblockUser) unblockUser();
-                return;
             }
         }
 
-        // Si no hubo bloque JSON válido, enviar el texto limpio
-    const cleanTextResponse = limpiarBloquesJSON(textResponse).trim();
-        // Lógica especial para reserva: espera y reintento
+        // Si no hubo bloque JSON válido o fue procesado, enviar el texto limpio al usuario
+        const cleanTextResponse = limpiarBloquesJSON(textResponse).trim();
+        
         if (cleanTextResponse.includes('Voy a proceder a realizar la reserva.')) {
-            // Espera 30 segundos y responde ok al asistente
             await new Promise(res => setTimeout(res, 30000));
             let assistantApiResponse = await getAssistantResponse(assistantId, 'ok', state, undefined, ctx.from, ctx.from);
-            // Si la respuesta contiene (ID: ...), no la envíes al usuario, espera 10s y vuelve a enviar ok
             while (assistantApiResponse && /(ID:\s*\w+)/.test(assistantApiResponse)) {
-                console.log('[Debug] Respuesta contiene ID de reserva, esperando 10s y reenviando ok...');
                 await new Promise(res => setTimeout(res, 10000));
                 assistantApiResponse = await getAssistantResponse(assistantId, 'ok', state, undefined, ctx.from, ctx.from);
             }
-            // Cuando la respuesta no contiene el ID, envíala al usuario
             if (assistantApiResponse) {
                 try {
                     await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
-                    if (ctx && ctx.type !== 'webchat') {
-                        // console.log('[WhatsApp Debug] flowDynamic ejecutado correctamente');
-                    }
                 } catch (err) {
                     console.error('[WhatsApp Debug] Error en flowDynamic:', err);
                 }
@@ -362,11 +335,7 @@ export class AssistantResponseProcessor {
                 if (chunk.trim().length > 0) {
                     try {
                         await flowDynamic([{ body: chunk.trim() }]);
-                        // Pequeña pausa para evitar que WhatsApp ignore mensajes muy rápidos
                         await new Promise(r => setTimeout(r, 600));
-                        if (ctx && ctx.type !== 'webchat') {
-                            // console.log('[WhatsApp Debug] flowDynamic ejecutado correctamente');
-                        }
                     } catch (err) {
                         console.error('[WhatsApp Debug] Error en flowDynamic:', err);
                     }
