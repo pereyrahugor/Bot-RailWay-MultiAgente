@@ -71,6 +71,13 @@ function limpiarBloquesJSON(texto: string): string {
         return `___SPECIAL_BLOCK_${index}___`;
     });
 
+    // Preservar [DB:T:"tabla", D:"dato"]
+    textoConMarcadores = textoConMarcadores.replace(/\[DB\s*:\s*"?[tT]"?\s*:[\s\S]*?\]/gi, (match) => {
+        const index = specialBlocks.length;
+        specialBlocks.push(match);
+        return `___SPECIAL_BLOCK_${index}___`;
+    });
+
     // Preservar [API]...[/API]
     textoConMarcadores = textoConMarcadores.replace(/\[API\][\s\S]*?\[\/API\]/g, (match) => {
         const index = specialBlocks.length;
@@ -149,6 +156,38 @@ export class AssistantResponseProcessor {
             // Ejecutar Query
             const queryResult = await executeDbQuery(sqlQuery);
             console.log(`[AssistantResponseProcessor] 📄 Resultado DB:`, queryResult.substring(0, 100) + '...');
+
+            // Enviar resultado al asistente (NO al usuario)
+            const newResponse = await getAssistantResponse(
+                assistantId,
+                `[DB_RESULT] ${queryResult} [/DB_RESULT]`,
+                state,
+                undefined,
+                ctx.from,
+                ctx.from
+            );
+
+            // Recursión: procesar la nueva respuesta
+            await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
+                newResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId
+            );
+            return; // Terminar ejecución actual
+        }
+
+        // 0.1) Detectar y procesar DB SEARCH [DB:T:"tabla", D:"dato"]
+        const dbSearchRegex = /\[DB\s*:\s*"?[tT]"?\s*:\s*"(?<tabla>[^"]+)"\s*,\s*"?[dD]"?\s*:\s*"(?<dato>[^"]+)"\]/i;
+        const dbSearchMatch = textResponse.match(dbSearchRegex);
+
+        if (dbSearchMatch && dbSearchMatch.groups) {
+            const { tabla, dato } = dbSearchMatch.groups;
+            const sqlQuery = `SELECT * FROM "${tabla}" WHERE "${tabla}"::text ~* '${dato}'`;
+            
+            if (ctx && ctx.type === 'webchat') console.log(`[Webchat Debug] 🔍 Detectada DB Search en ${tabla}: ${dato}`);
+            else console.log(`[WhatsApp Debug] 🔍 Detectada DB Search en ${tabla}: ${dato}`);
+
+            // Ejecutar Query
+            const queryResult = await executeDbQuery(sqlQuery);
+            console.log(`[AssistantResponseProcessor] 📄 Resultado DB Search:`, queryResult.substring(0, 100) + '...');
 
             // Enviar resultado al asistente (NO al usuario)
             const newResponse = await getAssistantResponse(
