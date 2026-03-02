@@ -19,6 +19,7 @@ import { CalendarEvents } from "../Api-Google/calendarEvents";
 import fs from 'fs';
 import moment from 'moment';
 import OpenAI from "openai";
+import { downloadFileFromDrive } from "../utils/googleDriveHandler";
 //import { handleToolFunctionCall } from '../Api-BotAsistente/handleToolFunctionCall.js';
 
 const openai = new OpenAI({
@@ -80,6 +81,13 @@ function limpiarBloquesJSON(texto: string): string {
 
     // Preservar [API]...[/API]
     textoConMarcadores = textoConMarcadores.replace(/\[API\][\s\S]*?\[\/API\]/g, (match) => {
+        const index = specialBlocks.length;
+        specialBlocks.push(match);
+        return `___SPECIAL_BLOCK_${index}___`;
+    });
+
+    // Preservar [PDF: ID]
+    textoConMarcadores = textoConMarcadores.replace(/\[PDF\s*:\s*([\s\S]*?)\]/gi, (match) => {
         const index = specialBlocks.length;
         specialBlocks.push(match);
         return `___SPECIAL_BLOCK_${index}___`;
@@ -224,6 +232,30 @@ export class AssistantResponseProcessor {
                 newResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId, recursionDepth + 1
             );
             return; // Terminar ejecución actual
+        }
+
+        // 0.2) Detectar y procesar descarga de PDF [PDF: ID]
+        const pdfRegex = /\[PDF\s*:\s*([\s\S]*?)\]/i;
+        const pdfMatch = textResponse.match(pdfRegex);
+        if (pdfMatch) {
+            const fileId = pdfMatch[1].trim();
+            console.log(`[AssistantResponseProcessor] 📄 Detectada solicitud de PDF: ${fileId}`);
+            
+            try {
+                const filePath = await downloadFileFromDrive(fileId);
+                console.log(`[AssistantResponseProcessor] 📤 Enviando PDF al usuario: ${filePath}`);
+                
+                await flowDynamic([{
+                    body: "Aquí tienes el documento solicitado:",
+                    media: filePath
+                }]);
+
+                // Opcional: eliminar archivo temporal después de enviar
+                // setTimeout(() => fs.unlinkSync(filePath), 5000);
+            } catch (err) {
+                console.error(`[AssistantResponseProcessor] ❌ Error al procesar PDF (${fileId}):`, err);
+                await flowDynamic([{ body: "Hubo un error al intentar descargar el documento. Por favor, intenta más tarde." }]);
+            }
         }
 
         // 1) Extraer bloque [API] ... [/API]

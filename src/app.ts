@@ -19,6 +19,7 @@ import { welcomeFlowTxt } from "./Flows/welcomeFlowTxt";
 import { welcomeFlowVoice } from "./Flows/welcomeFlowVoice";
 import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
 import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
+import { welcomeFlowButton } from "./Flows/welcomeFlowButton";
 import { locationFlow } from "./Flows/locationFlow";
 import { AssistantResponseProcessor, waitForActiveRuns } from "./utils/AssistantResponseProcessor";
 import { updateMain } from "./addModule/updateMain";
@@ -31,6 +32,7 @@ import { WebChatSession } from './utils-web/WebChatSession';
 import { fileURLToPath } from 'url';
 import { RailwayApi } from "./Api-RailWay/Railway";
 import { getArgentinaDatetimeString } from "./utils/ArgentinaTime";
+import { userQueues, userLocks, handleQueue, registerProcessCallback } from "./utils/queueManager";
 
 // Definir __dirname para ES modules
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -43,8 +45,6 @@ const PORT = process.env.PORT || 8080;
 
 const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_WS ?? "";
 
-const userQueues = new Map();
-const userLocks = new Map();
 // Mapa para persistir el asistente asignado a cada usuario
 const userAssignedAssistant = new Map();
 
@@ -284,26 +284,6 @@ const processUserMessage = async (
 };
 
 
-const handleQueue = async (userId) => {
-    const queue = userQueues.get(userId);
-
-    if (userLocks.get(userId)) return;
-
-    userLocks.set(userId, true);
-
-    while (queue.length > 0) {
-        const { ctx, flowDynamic, state, provider, gotoFlow } = queue.shift();
-        try {
-            await processUserMessage(ctx, { flowDynamic, state, provider, gotoFlow });
-        } catch (error) {
-            console.error(`Error procesando el mensaje de ${userId}:`, error);
-        }
-    }
-
-    userLocks.set(userId, false);
-    userQueues.delete(userId);
-};
-
 // Main function to initialize the bot and load Google Sheets data
 const main = async () => {
     await restoreSessionFromDb();
@@ -317,9 +297,14 @@ const main = async () => {
     // Cargar todas las hojas principales con una sola función reutilizable
     await updateMain();
 
+    // Registrar el callback para procesar mensajes de la cola
+    registerProcessCallback(async (item) => {
+        await processUserMessage(item.ctx, item);
+    });
+
 
                 // ...existing code...
-                const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowDoc, locationFlow, idleFlow]);
+                const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowDoc, locationFlow, idleFlow, welcomeFlowButton]);
                 const adapterDB = new MemoryDB();
                 adapterProvider = createProvider(BaileysProvider, {
                     version: [2, 3000, 1030817285],
@@ -350,6 +335,43 @@ const main = async () => {
                         } catch (err) {
                             console.error('❌ [Provider] Error generating QR image:', err);
                         }
+                    }
+                });
+
+                adapterProvider.on('message', (ctx) => {
+                    console.log(`Type Msj Recibido: ${ctx.type || 'desconocido'}`);
+                    console.log('⚡ [Provider] message received');
+                    
+                    // Detección de botones para Sherpa/Baileys/Meta
+                    const isButton = ctx.message?.buttonsResponseMessage || 
+                                     ctx.message?.templateButtonReplyMessage || 
+                                     ctx.message?.interactiveResponseMessage ||
+                                     ctx.message?.listResponseMessage;
+                    
+                    if (isButton) {
+                        console.log('🔘 Interacción de botón específica detectada');
+                        // Mapear el texto del botón al body para que el flujo pueda procesarlo
+                        if (ctx.message?.buttonsResponseMessage) {
+                            ctx.body = ctx.message.buttonsResponseMessage.selectedDisplayText || ctx.message.buttonsResponseMessage.selectedId;
+                        } else if (ctx.message?.templateButtonReplyMessage) {
+                            ctx.body = ctx.message.templateButtonReplyMessage.selectedDisplayText || ctx.message.templateButtonReplyMessage.selectedId;
+                        } else if (ctx.message?.listResponseMessage) {
+                            ctx.body = ctx.message.listResponseMessage.title || ctx.message.listResponseMessage.singleSelectReply?.selectedRowId;
+                        } else if (ctx.message?.interactiveResponseMessage) {
+                            try {
+                                const interactive = JSON.parse(ctx.message.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson);
+                                ctx.body = interactive.id;
+                            } catch (e) {
+                                ctx.body = 'buttonInteraction';
+                            }
+                        }
+                        
+                        // Asignar el tipo ACTION para disparar welcomeFlowButton
+                        ctx.type = EVENTS.ACTION;
+                        console.log(`Actualizado -> Type: ${ctx.type} | Body: ${ctx.body}`);
+                    } else if (ctx.type === 'desconocido' || !ctx.body) {
+                         // Log de ayuda para mensajes de plantilla de Meta no detectados
+                         console.log('⚠️ [Debug] Mensaje potencial de plantilla no detectado. Estructura ctx:', JSON.stringify(ctx).substring(0, 500));
                     }
                 });
 
@@ -772,9 +794,6 @@ export {
     welcomeFlowImg,
     welcomeFlowDoc,
     locationFlow,
-    handleQueue,
-    userQueues,
-    userLocks,
     userAssignedAssistant,
     processUserMessage
 };

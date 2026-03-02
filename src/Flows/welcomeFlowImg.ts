@@ -5,7 +5,7 @@ import { welcomeFlowTxt } from "./welcomeFlowTxt";
 import { welcomeFlowVideo } from "./welcomeFlowVideo";
 import { OpenAI } from "openai";
 import { reset } from "../utils/timeOut";
-import { handleQueue, userQueues, userLocks } from "../app";
+import { handleQueue, userQueues, userLocks } from "~/utils/queueManager";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_IMG });
 const setTime = Number(process.env.timeOutCierre) * 60 * 1000;
