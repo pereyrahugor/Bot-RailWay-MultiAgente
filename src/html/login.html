@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acceso Backoffice</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f8fafc;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .login-card {
+            background: var(--card);
+            padding: 2rem;
+            border-radius: 1.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+        }
+        h1 { font-weight: 600; margin-bottom: 0.5rem; font-size: 1.5rem; }
+        p { color: #94a3b8; margin-bottom: 2rem; }
+        input {
+            width: 100%;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            border-radius: 0.75rem;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: white;
+            box-sizing: border-box;
+            outline: none;
+            transition: border 0.3s;
+        }
+        input:focus { border-color: var(--primary); }
+        button {
+            width: 100%;
+            padding: 1rem;
+            background: linear-gradient(135deg, #6366f1, #4f46e5);
+            color: white;
+            border: none;
+            border-radius: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+        button:hover { transform: translateY(-2px); opacity: 0.9; }
+        .error { color: #f87171; margin-top: 1rem; font-size: 0.9rem; display: none; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h1 id="bot-name">Bot Control</h1>
+        <p>Introduce tu token de acceso</p>
+        <input type="password" id="token" placeholder="Token de seguridad" autofocus>
+        <button onclick="login()">Entrar al Backoffice</button>
+        <div id="error" class="error">Token inválido. Inténtalo de nuevo.</div>
+    </div>
+
+    <script>
+        // Cargar nombre del bot dinámicamente
+        fetch('/api/assistant-name')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('bot-name').innerText = data.name + ' Bot';
+                document.title = 'Acceso - ' + data.name;
+            });
+
+        async function login() {
+            const token = document.getElementById('token').value;
+            const errorDiv = document.getElementById('error');
+            
+            if (!token) return;
+
+            const response = await fetch('/api/backoffice/auth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                localStorage.setItem('backoffice_token', token);
+                window.location.href = '/backoffice';
+            } else {
+                errorDiv.style.display = 'block';
+            }
+        }
+
+        document.getElementById('token').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') login();
+        });
+    </script>
+</body>
+</html>

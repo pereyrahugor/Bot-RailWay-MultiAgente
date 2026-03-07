@@ -20,48 +20,37 @@ import fs from 'fs';
 import moment from 'moment';
 import OpenAI from "openai";
 import { downloadFileFromDrive } from "../utils/googleDriveHandler";
+import { waitForActiveRuns } from "./OpenAIHandler";
 //import { handleToolFunctionCall } from '../Api-BotAsistente/handleToolFunctionCall.js';
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
-export async function waitForActiveRuns(threadId: string) {
-    if (!threadId) return;
-    try {
-        console.log(`[AssistantResponseProcessor] Verificando runs activos en thread ${threadId}...`);
-        let attempt = 0;
-        const maxAttempts = 20; // Aumentado para dar más tiempo a OpenAI
-        while (attempt < maxAttempts) {
-            const runs = await openai.beta.threads.runs.list(threadId, { limit: 5 });
-            const activeRun = runs.data.find(run =>
-                ["queued", "in_progress", "cancelling", "requires_action"].includes(run.status)
-            );
-
-            if (activeRun) {
-                console.log(`[AssistantResponseProcessor] [${attempt}/${maxAttempts}] Run activo detectado (${activeRun.id}, estado: ${activeRun.status}). Esperando 2s...`);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                attempt++;
-            } else {
-                console.log(`[AssistantResponseProcessor] No hay runs activos. OK.`);
-                // Delay adicional para asegurar sincronización de OpenAI
-                await new Promise(resolve => setTimeout(resolve, 1500));
-                return;
-            }
-        }
-        console.warn(`[AssistantResponseProcessor] Timeout esperando liberación del thread ${threadId}.`);
-    } catch (error) {
-        console.error(`[AssistantResponseProcessor] Error verificando runs:`, error);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-}
+// waitForActiveRuns movido a OpenAIHandler.ts
 
 // Mapa global para bloquear usuarios de WhatsApp durante operaciones API
 const userApiBlockMap = new Map();
 const API_BLOCK_TIMEOUT_MS = 1000; // 5 segundos
 
-function limpiarBloquesJSON(texto: string): string {
-    // 1. Preservar bloques especiales temporalmente
+function limpiarBloquesJSON(texto: string, finalDelivery: boolean = false): string {
+    if (!texto) return "";
+    
+    // 1. Si es para entrega final, removemos todo lo que esté entre corchetes técnicos
+    if (finalDelivery) {
+        let limpio = texto;
+        limpio = limpio.replace(/\[DB_QUERY\s*:[\s\S]*?\]/gi, '');
+        limpio = limpio.replace(/\[DB\s*:\s*[tT]\s*:[\s\S]*?\]/gi, '');
+        limpio = limpio.replace(/\[API\][\s\S]*?\[\/API\]/gi, '');
+        limpio = limpio.replace(/\[PDF\s*:\s*[\s\S]*?\]/gi, '');
+        limpio = limpio.replace(/\[RESULTADO_DB\][\s\S]*?\[\/RESULTADO_DB\]/gi, '');
+        limpio = limpio.replace(/\[REPORT\][\s\S]*?\[\/REPORT\]/gi, '');
+        limpio = limpio.replace(/【.*?】/g, ''); // Citas de OpenAI
+        limpio = limpio.replace(/```json[\s\S]*?```/gi, ''); // Bloques de código JSON
+        return limpio.trim();
+    }
+
+    // Comportamiento original para preservación interna
     const specialBlocks: string[] = [];
     let textoConMarcadores = texto;
 
@@ -73,14 +62,14 @@ function limpiarBloquesJSON(texto: string): string {
     });
 
     // Preservar [DB:T:"tabla", D:"dato"]
-    textoConMarcadores = textoConMarcadores.replace(/\[DB\s*:\s*"?[tT]"?\s*:[\s\S]*?\]/gi, (match) => {
+    textoConMarcadores = textoConMarcadores.replace(/\[DB\s*:\s*[tT]\s*:[\s\S]*?\]/gi, (match) => {
         const index = specialBlocks.length;
         specialBlocks.push(match);
         return `___SPECIAL_BLOCK_${index}___`;
     });
 
     // Preservar [API]...[/API]
-    textoConMarcadores = textoConMarcadores.replace(/\[API\][\s\S]*?\[\/API\]/g, (match) => {
+    textoConMarcadores = textoConMarcadores.replace(/\[API\][\s\S]*?\[\/API\]/gi, (match) => {
         const index = specialBlocks.length;
         specialBlocks.push(match);
         return `___SPECIAL_BLOCK_${index}___`;
@@ -93,10 +82,10 @@ function limpiarBloquesJSON(texto: string): string {
         return `___SPECIAL_BLOCK_${index}___`;
     });
 
-    // 2. Limpiar referencias de OpenAI tipo 【 archivo.pdf 】
+    // Limpiar referencias de OpenAI tipo 【 archivo.pdf 】
     let limpio = textoConMarcadores.replace(/【.*?】/g, '');
 
-    // 3. Restaurar bloques especiales
+    // Restaurar bloques especiales
     limpio = limpio.replace(/___SPECIAL_BLOCK_(\d+)___/g, (match, index) => {
         return specialBlocks[parseInt(index)];
     });
@@ -250,11 +239,24 @@ export class AssistantResponseProcessor {
                     media: filePath
                 }]);
 
-                // Opcional: eliminar archivo temporal después de enviar
-                // setTimeout(() => fs.unlinkSync(filePath), 5000);
+                // Notificar al asistente que el PDF fue enviado correctamente
+                const newResponse = await getAssistantResponse(
+                    assistantId,
+                    `[SISTEMA] PDF enviado con éxito id ${fileId}. ¿Deseas algo más?`,
+                    state,
+                    undefined,
+                    ctx.from,
+                    ctx.from
+                );
+
+                await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
+                    newResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId, recursionDepth + 1
+                );
+                return;
             } catch (err) {
                 console.error(`[AssistantResponseProcessor] ❌ Error al procesar PDF (${fileId}):`, err);
-                await flowDynamic([{ body: "Hubo un error al intentar descargar el documento. Por favor, intenta más tarde." }]);
+                await flowDynamic([{ body: "Hubo un error al intentar descargar el documento." }]);
+                return;
             }
         }
 
@@ -345,7 +347,7 @@ export class AssistantResponseProcessor {
         }
 
         // Si no hubo bloque JSON válido o fue procesado, enviar el texto limpio al usuario
-        const cleanTextResponse = limpiarBloquesJSON(textResponse).trim();
+        const cleanTextResponse = limpiarBloquesJSON(textResponse, true).trim();
         
         if (cleanTextResponse.includes('Voy a proceder a realizar la reserva.')) {
             await new Promise(res => setTimeout(res, 30000));

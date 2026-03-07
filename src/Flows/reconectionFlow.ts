@@ -1,7 +1,6 @@
-// Clase para manejar la lógica de reconexión cuando el campo nombre está vacío
-import { toAsk } from '@builderbot-plugins/openai-assistants';
-import { extraerDatosResumen, GenericResumenData } from '~/utils/extractJsonData';
-import { analizarDestinoRecepcionista, ASSISTANT_MAP, userAssignedAssistant } from "../app";
+import { safeToAsk } from '../utils/OpenAIHandler';
+import { errorReporter, analizarDestinoRecepcionista, ASSISTANT_MAP, userAssignedAssistant } from "../app";
+import { extraerDatosResumen, GenericResumenData } from '../utils/extractJsonData';
 
 // Opciones para configurar el flujo de reconexión
 interface ReconectionOptions {
@@ -99,7 +98,7 @@ export class ReconectionFlow {
                 if (this.state) delete this.state.reconectionFlow;
                 // Determinar el asistente destino según la lógica multiagente
                 const asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(this.ctx.from) || 'asistente1'];
-                const resumen = await toAsk(asistenteEnUso, "GET_RESUMEN", this.state);
+                const resumen = await safeToAsk(asistenteEnUso, "GET_RESUMEN", this.state, this.ctx.from, errorReporter);
                 const data: GenericResumenData = extraerDatosResumen(resumen);
                 await this.onSuccess(data);
                 return;
@@ -107,7 +106,7 @@ export class ReconectionFlow {
 
             // Si no respondió, intentar obtener el resumen nuevamente desde el asistente asignado
             const asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(this.ctx.from) || 'asistente1'];
-            const resumen = await toAsk(asistenteEnUso, "GET_RESUMEN", this.state);
+            const resumen = await safeToAsk(asistenteEnUso, "GET_RESUMEN", this.state, this.ctx.from, errorReporter);
             const data: GenericResumenData = extraerDatosResumen(resumen);
             const nombreInvalido = !data.nombre || data.nombre.trim() === "" ||
                 data.nombre.trim() === "- Nombre:" ||
@@ -152,7 +151,7 @@ export class ReconectionFlow {
                 const prompt = `hola, ${userMsg}`;
                 try {
                     const asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(this.ctx.from) || 'asistente1'];
-                    await toAsk(asistenteEnUso, prompt, this.state);
+                    await safeToAsk(asistenteEnUso, prompt, this.state, this.ctx.from, errorReporter);
                 } catch (err) {
                     console.error('[ReconectionFlow] Error enviando mensaje al asistente:', err);
                 }

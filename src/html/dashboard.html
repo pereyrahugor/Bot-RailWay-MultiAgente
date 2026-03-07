@@ -4,38 +4,71 @@
     <meta charset="UTF-8">
     <title>Bot Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/style/dashboard.css">
 </head>
 <body>
-    <div class="card">
-        <h1>🤖 Estado del Bot</h1>
-        <p>Estado de Sesión: <span class="status" id="session-status">Cargando...</span></p> 
-        <div id="session-error"></div>
-        <div id="qr-section" style="display:none">
-            <div class="qr-container">
-                <h3>Escanea el código QR con WhatsApp</h3>
-                <img src="/qr.png" class="qr" alt="Cargando QR..." onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
-                <p style="display:none; color:orange;">Generando QR... por favor espera.</p>  
-                <p class="info-text">La página se actualizará automáticamente cuando aparezca el QR.</p>
+    <h1 id="main-title">🤖 Panel de Control</h1>
+    
+    <div class="dashboard-container">
+        <!-- Columna Izquierda: Estado y QR -->
+        <div class="left-column">
+            <div class="card">
+                <h2>📈 Estado del Bot</h2>
+                <p>Estado de Sesión: <span class="status" id="session-status">Cargando...</span></p>
+                <div id="session-error"></div>
+                <div id="qr-section" style="display:none">
+                    <div class="qr-container">
+                        <h3 style="color:#334155; margin-bottom:15px;">Escanea con WhatsApp</h3>
+                        <img src="/qr.png" class="qr" alt="Cargando QR..." onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+                        <p style="display:none; color:orange;">Generando QR... por favor espera.</p>
+                    </div>
+                </div>
+                <div id="session-info" class="info-text" style="display:none"></div>
+                <div id="whatsapp-link-container" style="display:none; margin-top: 15px;">
+                    <a id="whatsapp-link" href="#" target="_blank" class="btn">
+                        📱 Abrir en WhatsApp
+                    </a>
+                </div>
             </div>
         </div>
-        <div id="session-info" class="info-text" style="display:none"></div>
+
+        <!-- Columna Derecha: Secciones de Gestión -->
+        <div class="right-column">
+            <div class="card" style="border-left: 5px solid #6366f1;">
+                <h2>👔 Backoffice e Intervención</h2>
+                <p class="info-text">Gestiona los chats, activa/desactiva el bot y responde manualmente en tiempo real.</p>
+                <a href="/login" class="btn btn-accent">Abrir Backoffice</a>
+            </div>
+
+            <div class="card">
+                <h2>💬 WebChat de Prueba</h2>
+                <p class="info-text">Interfaz de chat web para probar respuestas y flujos sin usar WhatsApp.</p>
+                <a href="/webchat" class="btn">Abrir WebChat</a>
+            </div>
+
+            <div class="card">
+                <h2>⚙️ Parámetros y Variables</h2>
+                <p class="info-text">Configura los IDs de Google Sheets, tokens y otras variables críticas.</p>
+                <a href="/variables" class="btn">Configurar Variables</a>
+            </div>
+
+            <div class="card" style="border-top: 2px solid rgba(239, 68, 68, 0.2);">
+                <h2>⚠️ Zona de Peligro</h2>
+                <p class="info-text">Si el bot no responde, puedes forzar un cierre de sesión para generar un nuevo QR.</p>
+                <button id="go-reset" class="btn btn-danger">🗑️ Reiniciar Sesión</button>
+            </div>
+        </div>
     </div>
-    <div class="card">
-        <h2>💬 WebChat</h2>
-        <p class="info-text">Accede a la interfaz de chat web para pruebas o soporte.</p>     
-        <a href="/webchat" class="btn">Abrir WebChat</a>
-    </div>
-    <div class="card">
-        <h2>⚙️ Editar Variables</h2>
-        <p class="info-text">Accede al panel de edición de parámetros y variables del Bot.</p>
-        <a href="/variables" class="btn">Abrir Panel</a>
-    </div>
-    <div class="card" style="border-left: 5px solid #dc3545;">
-        <h2>⚠️ Zona de Peligro</h2>
-        <p class="info-text">Si el bot no responde en WhatsApp, elimina la sesión para generar un nuevo QR.</p>
-        <button id="go-reset" class="btn btn-danger">🗑️ Borrar Sesión y Reiniciar</button>
-    </div>
+
+    <script>
+        fetch('/api/assistant-name')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('main-title').innerText = '🤖 Panel de Control ' + data.name;
+                document.title = data.name + ' - Dashboard';
+            });
+    </script>
     <script src="/js/dashboard.js"></script>
 </body>
 </html>

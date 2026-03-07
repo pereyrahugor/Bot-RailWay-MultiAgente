@@ -11,7 +11,7 @@ if (!supabaseUrl || !supabaseKey) {
     console.warn("⚠️ Supabase credentials missing during dbHandler init.");
 }
 
-const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
+export const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
 export async function executeDbQuery(sqlQuery: string): Promise<string> {
     if (!supabase) return "Error: Base de datos no configurada.";

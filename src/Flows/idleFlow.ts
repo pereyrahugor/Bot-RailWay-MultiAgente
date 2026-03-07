@@ -1,5 +1,6 @@
 import { addKeyword, EVENTS } from '@builderbot/bot';
-import { toAsk } from '@builderbot-plugins/openai-assistants';
+import { safeToAsk } from '../utils/OpenAIHandler';
+import { errorReporter } from '../app';
 import { GenericResumenData, extraerDatosResumen } from '~/utils/extractJsonData';
 import { addToSheet } from '~/utils/googleSheetsResumen';
 import fs from 'fs';
@@ -74,8 +75,8 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
         try {
             // Obtener el asistente multiagente asignado
             const asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(ctx.from) || 'asistente1'];
-            // Obtener el resumen del asistente de OpenAI
-            const resumen = await toAsk(asistenteEnUso, "GET_RESUMEN", state);
+            // Obtener el resumen del asistente de OpenAI usando safeToAsk
+            const resumen = await safeToAsk(asistenteEnUso, "GET_RESUMEN", state, ctx.from, errorReporter);
 
             if (!resumen) {
                 console.warn("No se pudo obtener el resumen.");

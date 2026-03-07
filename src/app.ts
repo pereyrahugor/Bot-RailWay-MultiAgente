@@ -12,7 +12,7 @@ import { createBot, createProvider, createFlow, addKeyword, EVENTS } from "@buil
 import { MemoryDB } from "@builderbot/bot";
 import { BaileysProvider } from "builderbot-provider-sherpa";
 import { restoreSessionFromDb, startSessionSync, deleteSessionFromDb } from "./utils/sessionSync";
-import { toAsk, httpInject } from "@builderbot-plugins/openai-assistants";
+import { httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
 import { idleFlow } from "./Flows/idleFlow";
 import { welcomeFlowTxt } from "./Flows/welcomeFlowTxt";
@@ -21,7 +21,8 @@ import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
 import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
 import { welcomeFlowButton } from "./Flows/welcomeFlowButton";
 import { locationFlow } from "./Flows/locationFlow";
-import { AssistantResponseProcessor, waitForActiveRuns } from "./utils/AssistantResponseProcessor";
+import { AssistantResponseProcessor } from "./utils/AssistantResponseProcessor";
+import { safeToAsk, waitForActiveRuns } from "./utils/OpenAIHandler";
 import { updateMain } from "./addModule/updateMain";
 //import { listImg } from "./addModule/listImg";
 import { ErrorReporter } from "./utils/errorReporter";
@@ -33,6 +34,7 @@ import { fileURLToPath } from 'url';
 import { RailwayApi } from "./Api-RailWay/Railway";
 import { getArgentinaDatetimeString } from "./utils/ArgentinaTime";
 import { userQueues, userLocks, handleQueue, registerProcessCallback } from "./utils/queueManager";
+import { HistoryHandler, historyEvents } from './utils/HistoryHandler';
 
 // Definir __dirname para ES modules
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -49,7 +51,7 @@ const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_WS ?? "";
 const userAssignedAssistant = new Map();
 
 let adapterProvider;
-let errorReporter;
+export let errorReporter;
 
 const TIMEOUT_MS = 40000;
 
@@ -70,7 +72,7 @@ export const getAssistantResponse = async (assistantId, message, state, fallback
     if (!thread_id && !tId) {
         const fechaHoraActual = getArgentinaDatetimeString();
         const mensajeFecha = `La fecha y hora actual es: ${fechaHoraActual}`;
-        await toAsk(assistantId, mensajeFecha, state);
+        await safeToAsk(assistantId, mensajeFecha, state, userId, errorReporter);
     }
   // Si hay un timeout previo, lo limpiamos
   if (userTimeouts.has(userId)) {
@@ -88,7 +90,7 @@ export const getAssistantResponse = async (assistantId, message, state, fallback
         userRetryCount.set(userId, retries + 1);
         console.warn(`⏱ Timeout alcanzado. Reintentando (${retries + 1}/3) con el último mensaje del usuario al asistente...`);
         if (tId) await waitForActiveRuns(tId);
-        resolve(toAsk(assistantId, message, state));
+        resolve(safeToAsk(assistantId, message, state, userId, errorReporter));
       } else {
         userRetryCount.set(userId, 0); // Reset para futuros intentos
         console.error(`⏱ Timeout alcanzado. Se realizaron 3 intentos sin respuesta del asistente. Reportando error al grupo.`);
@@ -104,9 +106,9 @@ export const getAssistantResponse = async (assistantId, message, state, fallback
     userTimeouts.set(userId, timeoutId);
   });
 
-  // Lanzamos la petición a OpenAI
+  // Lanzamos la petición a OpenAI usando safeToAsk
   if (tId) await waitForActiveRuns(tId);
-  const askPromise = toAsk(assistantId, message, state).then((result) => {
+  const askPromise = safeToAsk(assistantId, message, state, userId, errorReporter).then((result) => {
     // Si responde antes del timeout, limpiamos el timeout y el contador de reintentos
     if (userTimeouts.has(userId)) {
       clearTimeout(userTimeouts.get(userId));
@@ -173,6 +175,16 @@ const processUserMessage = async (
 ) => {
     await typing(ctx, provider);
     try {
+        // Persistir mensaje del usuario
+        await HistoryHandler.saveMessage(ctx.from, 'user', ctx.body, ctx.type, ctx.pushName);
+
+        // Verificar si el bot está activado para este chat (Intervención humana)
+        const botEnabled = await HistoryHandler.isBotEnabled(ctx.from);
+        if (!botEnabled) {
+            console.log(`[BACKOFFICE] Bot desactivado para ${ctx.from}. Ignorando IA.`);
+            return;
+        }
+
         // Determinar el asistente asignado actual
         const assigned = userAssignedAssistant.get(ctx.from) || 'asistente1';
         const response = await getAssistantResponse(
@@ -265,6 +277,8 @@ const processUserMessage = async (
                     getAssistantResponse,
                     ASSISTANT_MAP[assigned]
                 );
+                // Persistir respuesta del asistente
+                await HistoryHandler.saveMessage(ctx.from, 'assistant', respuestaSinResumen);
             }
             return state;
         }
@@ -621,6 +635,93 @@ const main = async () => {
                         res.status(404).send('QR no generado aún');
                     }
                 });
+
+                // ==========================================
+                // BACKOFFICE CRM API & REAL-TIME
+                // ==========================================
+                
+                // Middleware simple de autenticación
+                const BACKOFFICE_TOKEN = process.env.BACKOFFICE_TOKEN || "admin.123";
+                const backofficeAuth = (req, res, next) => {
+                    const token = req.query.token || req.headers['authorization'];
+                    if (token === BACKOFFICE_TOKEN) {
+                        return next();
+                    }
+                    console.warn(`[AUTH] Intento de acceso no autorizado desde ${req.socket.remoteAddress}`);
+                    res.status(401).json({ success: false, error: 'Unauthorized' });
+                };
+
+                // Socket.IO para tiempo real
+                const io = new Server(adapterProvider.server.server);
+                historyEvents.on('new_message', (payload) => {
+                    io.emit('new_message', payload);
+                });
+                historyEvents.on('bot_toggled', (payload) => {
+                    io.emit('bot_toggled', payload);
+                });
+
+                // Rutas API Backoffice
+                polkaApp.post('/api/backoffice/auth', (req, res) => {
+                    const { token } = req.body;
+                    if (token === BACKOFFICE_TOKEN) {
+                        res.json({ success: true });
+                    } else {
+                        res.json({ success: false });
+                    }
+                });
+
+                polkaApp.get('/api/backoffice/chats', backofficeAuth, async (req, res) => {
+                    const chats = await HistoryHandler.listChats();
+                    res.json(chats);
+                });
+
+                polkaApp.get('/api/backoffice/messages/:chatId', backofficeAuth, async (req, res) => {
+                    const messages = await HistoryHandler.getMessages(req.params.chatId);
+                    res.json(messages);
+                });
+
+                polkaApp.post('/api/backoffice/toggle-bot', backofficeAuth, async (req, res) => {
+                    const { chatId, enabled } = req.body;
+                    const result = await HistoryHandler.toggleBot(chatId, enabled);
+                    res.json(result);
+                });
+
+                polkaApp.get('/api/backoffice/profile-pic/:chatId', backofficeAuth, async (req, res) => {
+                    try {
+                        const chatId = req.params.chatId;
+                        if (!chatId.includes('@')) { // Si no es WhatsApp (ej: webchat)
+                            return res.status(404).end();
+                        }
+                        const url = await adapterProvider.vendor.profilePictureUrl(chatId, 'image');
+                        const imgRes = await fetch(url);
+                        const buffer = await imgRes.arrayBuffer();
+                        res.setHeader('Content-Type', 'image/jpeg');
+                        res.end(Buffer.from(buffer));
+                    } catch (e) {
+                        res.status(404).end();
+                    }
+                });
+
+                polkaApp.post('/api/backoffice/send-message', backofficeAuth, async (req, res) => {
+                    try {
+                        const { chatId, content } = req.body;
+                        if (!chatId || !content) return res.status(400).json({ error: 'Missing data' });
+
+                        // Enviar mensaje por WhatsApp vía provider
+                        await adapterProvider.sendMessage(chatId, content, {});
+                        
+                        // Guardar en historial como assistant (o humano)
+                        await HistoryHandler.saveMessage(chatId, 'assistant', content);
+
+                        res.json({ success: true });
+                    } catch (err) {
+                        res.status(500).json({ error: err.message });
+                    }
+                });
+
+                // Registrar páginas HTML de Backoffice
+                serveHtmlPage("/backoffice", "backoffice.html");
+                serveHtmlPage("/login", "login.html");
 
                 // Obtener el servidor HTTP real de BuilderBot después de httpInject
                 const realHttpServer = adapterProvider.server.server;
