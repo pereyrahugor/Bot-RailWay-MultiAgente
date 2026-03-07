@@ -21,6 +21,7 @@ import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
 import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
 import { welcomeFlowButton } from "./Flows/welcomeFlowButton";
 import { locationFlow } from "./Flows/locationFlow";
+import { welcomeFlowVideo } from "./Flows/welcomeFlowVideo";
 import { AssistantResponseProcessor } from "./utils/AssistantResponseProcessor";
 import { safeToAsk, waitForActiveRuns } from "./utils/OpenAIHandler";
 import { updateMain } from "./addModule/updateMain";
@@ -318,7 +319,7 @@ const main = async () => {
 
 
                 // ...existing code...
-                const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowDoc, locationFlow, idleFlow, welcomeFlowButton]);
+                const adapterFlow = createFlow([welcomeFlowTxt, welcomeFlowVoice, welcomeFlowImg, welcomeFlowDoc, welcomeFlowVideo, locationFlow, idleFlow, welcomeFlowButton]);
                 const adapterDB = new MemoryDB();
                 adapterProvider = createProvider(BaileysProvider, {
                     version: [2, 3000, 1030817285],
@@ -895,6 +896,7 @@ export {
     welcomeFlowImg,
     welcomeFlowDoc,
     locationFlow,
+    welcomeFlowVideo,
     userAssignedAssistant,
     processUserMessage
 };
