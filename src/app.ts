@@ -797,25 +797,65 @@ const main = async () => {
 
                                         // 4. Ejecutar proceso principal
                                         const assigned = userAssignedAssistant.get(ip) || 'asistente1';
-                                        const assistantId = ASSISTANT_MAP[assigned];
+                                        let currentAssistantId = ASSISTANT_MAP[assigned];
 
                                         // El primer mensaje se envía al asistente para obtener la respuesta inicial
-                                        const initialResponse = await getAssistantResponse(assistantId, message, state, undefined, ip, threadId);
+                                        let response = await getAssistantResponse(currentAssistantId, message, state, undefined, ip, threadId);
                                         
-                                        if (!initialResponse) {
+                                        if (!response) {
                                             return res.json({ reply: 'Lo siento, no pude obtener una respuesta del asistente.' });
+                                        }
+
+                                        // --- Lógica de Derivación ---
+                                        const destino = analizarDestinoRecepcionista(response);
+                                        const resumen = extraerResumenRecepcionista(response);
+
+                                        if (destino && ASSISTANT_MAP[destino] && destino !== assigned) {
+                                            console.log(`[Webchat Derivación] IP: ${ip} | ${assigned} -> ${destino}`);
+                                            userAssignedAssistant.set(ip, destino);
+                                            
+                                            // Limpiar respuesta para mostrar al usuario la parte del primer asistente (si existe)
+                                            const respuestaSinResumen = String(response)
+                                                .replace(/GET_RESUMEN[\s\S]+/i, '')
+                                                .replace(/^[ \t]*derivar(?:ndo)? a (asistente\s*[1-5]|asesor humano)\.?\s*$/gim, '')
+                                                .replace(/\[Enviando.*$/gim, '')
+                                                .trim();
+                                            
+                                            if (respuestaSinResumen) {
+                                                await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
+                                                    respuestaSinResumen,
+                                                    ctx,
+                                                    flowDynamic,
+                                                    state,
+                                                    undefined,
+                                                    () => {},
+                                                    getAssistantResponse,
+                                                    currentAssistantId
+                                                );
+                                            }
+
+                                            // Actualizar al nuevo asistente
+                                            currentAssistantId = ASSISTANT_MAP[destino];
+                                            response = await getAssistantResponse(
+                                                currentAssistantId,
+                                                resumen,
+                                                state,
+                                                "Por favor, responde aunque sea brevemente.",
+                                                ip,
+                                                threadId
+                                            );
                                         }
 
                                         // Procesar la respuesta a través del AssistantResponseProcessor (esto ejecutará [DB:...], etc.)
                                         await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                                            initialResponse,
+                                            response,
                                             ctx,
                                             flowDynamic,
                                             state,
                                             undefined, // provider
                                             () => {}, // gotoFlow
                                             getAssistantResponse,
-                                            assistantId
+                                            currentAssistantId
                                         );
 
                                         const finalReply = replyChunks.join('\n\n').trim();
