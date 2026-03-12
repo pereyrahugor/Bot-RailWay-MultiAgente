@@ -40,7 +40,7 @@ function limpiarBloquesJSON(texto: string, finalDelivery: boolean = false): stri
     if (finalDelivery) {
         let limpio = texto;
         limpio = limpio.replace(/\[DB_QUERY\s*:[\s\S]*?\]/gi, '');
-        limpio = limpio.replace(/\[DB\s*:\s*[tT]\s*:[\s\S]*?\]/gi, '');
+        limpio = limpio.replace(/\[DB\s*:[\s\S]*?\]/gi, '');
         limpio = limpio.replace(/\[API\][\s\S]*?\[\/API\]/gi, '');
         limpio = limpio.replace(/\[PDF\s*:\s*[\s\S]*?\]/gi, '');
         limpio = limpio.replace(/\[RESULTADO_DB\][\s\S]*?\[\/RESULTADO_DB\]/gi, '');
@@ -62,7 +62,7 @@ function limpiarBloquesJSON(texto: string, finalDelivery: boolean = false): stri
     });
 
     // Preservar [DB:T:"tabla", D:"dato"]
-    textoConMarcadores = textoConMarcadores.replace(/\[DB\s*:\s*[tT]\s*:[\s\S]*?\]/gi, (match) => {
+    textoConMarcadores = textoConMarcadores.replace(/\[DB\s*:[\s\S]*?\]/gi, (match) => {
         const index = specialBlocks.length;
         specialBlocks.push(match);
         return `___SPECIAL_BLOCK_${index}___`;
@@ -179,7 +179,7 @@ export class AssistantResponseProcessor {
         }
 
         // 0.1) Detectar y procesar DB SEARCH [DB:T:"tabla", D:"dato"]
-        const dbSearchRegex = /\[DB\s*:\s*"?[tT]"?\s*:\s*"(?<tabla>[^"]+)"\s*,\s*"?[dD]"?\s*:\s*"(?<dato>[^"]+)"\]/i;
+        const dbSearchRegex = /\[DB\s*:\s*\{?\s*"?T"?\s*[:"\s]+(?<tabla>[^"]+)"\s*,\s*"?D"?\s*[:"\s]+(?<dato>[^"]+)"\s*\}?\s*\]/i;
         const dbSearchMatch = textResponse.match(dbSearchRegex);
 
         if (dbSearchMatch && dbSearchMatch.groups) {
