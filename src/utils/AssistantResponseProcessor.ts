@@ -128,6 +128,12 @@ export class AssistantResponseProcessor {
 
         let jsonData: any = null;
         const textResponse = typeof response === "string" ? response : String(response || "");
+        
+        // Obtener threadId de forma segura para usar en todo el proceso
+        let threadId = ctx && ctx.thread_id;
+        if (!threadId && state && typeof state.get === 'function') {
+            threadId = state.get('thread_id');
+        }
 
         // Log de mensaje saliente al usuario (antes de cualquier filtro)
         if (ctx && ctx.type === 'webchat') {
@@ -148,11 +154,7 @@ export class AssistantResponseProcessor {
             const queryResult = await executeDbQuery(sqlQuery);
             console.log(`[AssistantResponseProcessor] 📄 Resultado DB:`, queryResult.substring(0, 100) + '...');
 
-            // Obtener threadId de forma segura
-            let threadId = ctx && ctx.thread_id;
-            if (!threadId && state && typeof state.get === 'function') {
-                threadId = state.get('thread_id');
-            }
+            
 
             // Esperar a que el Run anterior haya finalizado realmente en OpenAI
             if (threadId) {
@@ -167,9 +169,7 @@ export class AssistantResponseProcessor {
                 `[DB_RESULT] ${queryResult} [/DB_RESULT]`,
                 state,
                 undefined,
-                ctx.from,
-                ctx.from
-            );
+                ctx.from, threadId );
 
             // Recursión: procesar la nueva respuesta
             await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
@@ -179,7 +179,8 @@ export class AssistantResponseProcessor {
         }
 
         // 0.1) Detectar y procesar DB SEARCH [DB:T:"tabla", D:"dato"]
-        const dbSearchRegex = /\[DB\s*:\s*\{?\s*"?T"?\s*[:"\s]+(?<tabla>[^"]+)"\s*,\s*"?D"?\s*[:"\s]+(?<dato>[^"]+)"\s*\}?\s*\]/i;
+        // Regex mejorado para ser más flexible con comillas y espacios
+        const dbSearchRegex = /\[DB\s*:\s*\{?\s*["']?T["']?\s*[:"' \t]+(?<tabla>[^"' \t,]+)["']?\s*,\s*["']?D["']?\s*[:"' \t]+(?<dato>[^"']+)["']?\s*\}?\s*\]/i;
         const dbSearchMatch = textResponse.match(dbSearchRegex);
 
         if (dbSearchMatch && dbSearchMatch.groups) {
@@ -193,11 +194,7 @@ export class AssistantResponseProcessor {
             const queryResult = await executeDbQuery(sqlQuery);
             console.log(`[AssistantResponseProcessor] 📄 Resultado DB Search:`, queryResult.substring(0, 100) + '...');
 
-            // Obtener threadId de forma segura
-            let threadId = ctx && ctx.thread_id;
-            if (!threadId && state && typeof state.get === 'function') {
-                threadId = state.get('thread_id');
-            }
+            
 
             // Esperar a que el Run anterior haya finalizado realmente en OpenAI
             if (threadId) {
@@ -212,9 +209,7 @@ export class AssistantResponseProcessor {
                 `[DB_RESULT] ${queryResult} [/DB_RESULT]`,
                 state,
                 undefined,
-                ctx.from,
-                ctx.from
-            );
+                ctx.from, threadId );
 
             // Recursión: procesar la nueva respuesta
             await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
@@ -246,7 +241,7 @@ export class AssistantResponseProcessor {
                     state,
                     undefined,
                     ctx.from,
-                    ctx.from
+                    threadId
                 );
 
                 await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
@@ -331,7 +326,7 @@ export class AssistantResponseProcessor {
                         state,
                         undefined,
                         ctx.from,
-                        ctx.from
+                        threadId
                     );
 
                     await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
@@ -351,10 +346,10 @@ export class AssistantResponseProcessor {
         
         if (cleanTextResponse.includes('Voy a proceder a realizar la reserva.')) {
             await new Promise(res => setTimeout(res, 30000));
-            let assistantApiResponse = await getAssistantResponse(assistantId, 'ok', state, undefined, ctx.from, ctx.from);
+            let assistantApiResponse = await getAssistantResponse(assistantId, 'ok', state, undefined, ctx.from, threadId);
             while (assistantApiResponse && /(ID:\s*\w+)/.test(assistantApiResponse)) {
                 await new Promise(res => setTimeout(res, 10000));
-                assistantApiResponse = await getAssistantResponse(assistantId, 'ok', state, undefined, ctx.from, ctx.from);
+                assistantApiResponse = await getAssistantResponse(assistantId, 'ok', state, undefined, ctx.from, threadId);
             }
             if (assistantApiResponse) {
                 try {
