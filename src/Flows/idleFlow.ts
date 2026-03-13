@@ -76,7 +76,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
             // Obtener el asistente multiagente asignado
             const asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(ctx.from) || 'asistente1'];
             // Obtener el resumen del asistente de OpenAI usando safeToAsk
-            const resumen = await safeToAsk(asistenteEnUso, "GET_RESUMEN", state, ctx.from, errorReporter);
+            const resumen = await safeToAsk(asistenteEnUso, "GET_RESUMEN", state, ctx.from, errorReporter) as string;
 
             if (!resumen) {
                 console.warn("No se pudo obtener el resumen.");

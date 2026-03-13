@@ -73,7 +73,7 @@ export const safeToAsk = async (
   userId: string,
   errorReporter?: any,
   maxRetries = 5
-) => {
+): Promise<string | any> => {
   const SAFE_TIMEOUT = 120000; // 2 minutos de timeout total sugerido
 
   return Promise.race([
@@ -85,7 +85,7 @@ export const safeToAsk = async (
 
         try {
           console.log(`[OpenAIHandler] Consultando asistente (Intento ${attempt + 1}/${maxRetries})...`);
-          return await toAsk(assistantId, message, state);
+          return await toAsk(assistantId, message, state) as string;
         } catch (err: any) {
           attempt++;
           const errorMessage = err?.message || String(err);
@@ -129,7 +129,7 @@ async function renewThreadAndRetry(
     state: any,
     userId: string,
     errorReporter?: any
-) {
+): Promise<string | null> {
     try {
         // 1. Notificar al desarrollador
         if (errorReporter && typeof errorReporter.reportError === 'function') {
@@ -160,7 +160,7 @@ async function renewThreadAndRetry(
             await state.update({ thread_id: newThread.id });
         }
         
-        return await toAsk(assistantId, message, state);
+        return await toAsk(assistantId, message, state) as string;
     } catch (error) {
         console.error('[OpenAIHandler] Error en renovación de hilo:', error);
         return null;
