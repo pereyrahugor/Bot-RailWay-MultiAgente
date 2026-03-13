@@ -1,6 +1,9 @@
 import { safeToAsk } from '../utils/OpenAIHandler';
-import { errorReporter, analizarDestinoRecepcionista, ASSISTANT_MAP, userAssignedAssistant } from "../app";
+import { errorReporter, ASSISTANT_MAP, userAssignedAssistant } from "../app";
 import { extraerDatosResumen, GenericResumenData } from '../utils/extractJsonData';
+import { downloadFileFromDrive } from '../utils/googleDriveHandler';
+import { HistoryHandler } from '../utils/HistoryHandler';
+import fs from 'fs';
 
 // Opciones para configurar el flujo de reconexión
 interface ReconectionOptions {
@@ -79,10 +82,52 @@ export class ReconectionFlow {
                     break;
             }
             if (typeof timeout !== 'number' || isNaN(timeout)) timeout = this.timeoutMs;
+
+            // --- Lógica para detectar y descargar PDF ---
+            const pdfRegex = /\[\s*PDF\s*:\s*([a-zA-Z0-9_-]+)\s*\]/gi;
+            const pdfPaths: string[] = [];
+            let pdfMatch;
+            const originalMsg = msg;
+
+            while ((pdfMatch = pdfRegex.exec(originalMsg)) !== null) {
+                const fileId = pdfMatch[1];
+                try {
+                    const filePath = await downloadFileFromDrive(fileId);
+                    pdfPaths.push(filePath);
+                } catch (err: any) {
+                    console.error(`[ReconectionFlow PDF] Error con ID ${fileId}:`, err.message);
+                }
+            }
+
+            // Limpiar el mensaje de etiquetas PDF para el envío de texto
+            const cleanMsg = originalMsg.replace(/\[\s*PDF\s*:\s*[\s\S]*?\]/gi, "").trim();
+
             if (jid) {
                 try {
                     console.log(`[ReconectionFlow] Enviando mensaje de reconexión a:`, jid);
-                    await this.provider.sendText(jid, msg);
+                    await this.provider.sendText(jid, cleanMsg);
+                    // Persistir en el historial
+                    await HistoryHandler.saveMessage(this.ctx.from, 'assistant', cleanMsg, 'text');
+
+                    // Enviar los PDFs descargados
+                    for (const pdfPath of pdfPaths) {
+                        try {
+                            if (this.provider.sendFile) {
+                                await this.provider.sendFile(jid, pdfPath, "📄 Documento adjunto");
+                            } else {
+                                await this.provider.sendText(jid, "📄 Documento adjunto:", { media: pdfPath });
+                            }
+                            await HistoryHandler.saveMessage(this.ctx.from, 'assistant', "[Documento PDF]", 'document');
+                            
+                            setTimeout(() => {
+                                if (fs.existsSync(pdfPath)) {
+                                    fs.unlinkSync(pdfPath);
+                                }
+                            }, 5000);
+                        } catch (mediaErr) {
+                            console.error(`[ReconectionFlow Media] Error enviando media ${pdfPath}:`, mediaErr);
+                        }
+                    }
                 } catch (err) {
                     console.error(`[ReconectionFlow] Error enviando mensaje de reconexión a ${jid}:`, err);
                 }
@@ -96,27 +141,29 @@ export class ReconectionFlow {
             if (userResponded) {
                 // Limpiar el estado de reconexión al éxito
                 if (this.state) delete this.state.reconectionFlow;
-                // Determinar el asistente destino según la lógica multiagente
-                const asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(this.ctx.from) || 'asistente1'];
-                const resumen = await safeToAsk(asistenteEnUso, "GET_RESUMEN", this.state, this.ctx.from, errorReporter);
+                
+                // Usamos el recepcionista para refrescar el resumen
+                const resumen = await safeToAsk(ASSISTANT_MAP.asistente1, "GET_RESUMEN", this.state, this.ctx.from, errorReporter);
                 const data: GenericResumenData = extraerDatosResumen(resumen);
                 await this.onSuccess(data);
                 return;
             }
 
-            // Si no respondió, intentar obtener el resumen nuevamente desde el asistente asignado
-            const asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(this.ctx.from) || 'asistente1'];
-            const resumen = await safeToAsk(asistenteEnUso, "GET_RESUMEN", this.state, this.ctx.from, errorReporter);
+            // Si no respondió, intentar obtener el resumen nuevamente desde el recepcionista
+            const resumen = await safeToAsk(ASSISTANT_MAP.asistente1, "GET_RESUMEN", this.state, this.ctx.from, errorReporter);
             const data: GenericResumenData = extraerDatosResumen(resumen);
-            const nombreInvalido = !data.nombre || data.nombre.trim() === "" ||
-                data.nombre.trim() === "- Nombre:" ||
-                data.nombre.trim() === "- Interés:" ||
-                data.nombre.trim() === "- Nombre de la Empresa:" ||
-                data.nombre.trim() === "- Cargo:";
-            if (!nombreInvalido) {
+            
+            const tipo = data.tipo || "SI_RESUMEN";
+            if (tipo === "SI_RESUMEN" || (data.nombre && data.nombre.length > 2)) {
                 if (this.state) delete this.state.reconectionFlow;
                 await this.onSuccess(data);
                 return;
+            } else if (tipo === "NO_REPORTAR_BAJA") {
+                if (this.state) delete this.state.reconectionFlow;
+                await this.onFail();
+                return;
+            } else if (tipo === "NO_REPORTAR_SEGUIR") {
+                continue; // Siguiente ciclo del while
             }
         }
         // Limpiar el estado de reconexión al fallar
@@ -146,15 +193,8 @@ export class ReconectionFlow {
                 ) {
                     return;
                 }
-                // Enviar el mensaje recibido al asistente asignado como "hola, [msj]"
-                const userMsg = msg.body;
-                const prompt = `hola, ${userMsg}`;
-                try {
-                    const asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(this.ctx.from) || 'asistente1'];
-                    await safeToAsk(asistenteEnUso, prompt, this.state, this.ctx.from, errorReporter);
-                } catch (err) {
-                    console.error('[ReconectionFlow] Error enviando mensaje al asistente:', err);
-                }
+                // Nota: No enviamos al asistente aquí para evitar doble respuesta, 
+                // ya que al retornar resolve(true), el flujo principal retomará el control.
                 responded = true;
                 if (this.provider.off) this.provider.off('message', onMessage);
                 clearTimeout(timer);
@@ -178,7 +218,6 @@ export class ReconectionFlow {
     public getState() {
         return {
             attempts: this.attempts,
-            // Puedes agregar más campos si necesitas persistir más información
         };
     }
 

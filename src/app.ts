@@ -36,6 +36,7 @@ import { RailwayApi } from "./Api-RailWay/Railway";
 import { getArgentinaDatetimeString } from "./utils/ArgentinaTime";
 import { userQueues, userLocks, handleQueue, registerProcessCallback } from "./utils/queueManager";
 import { HistoryHandler, historyEvents } from './utils/HistoryHandler';
+import { obtenerTextoDelMensaje, obtenerMensajeUnwrapped } from "./utils/messageHelper";
 
 // Definir __dirname para ES modules
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -354,39 +355,87 @@ const main = async () => {
                 });
 
                 adapterProvider.on('message', (ctx) => {
-                    console.log(`Type Msj Recibido: ${ctx.type || 'desconocido'}`);
-                    console.log('⚡ [Provider] message received');
+                    // console.log(`Type Msj Recibido: ${ctx.type || 'desconocido'}`);
                     
-                    // Detección de botones para Sherpa/Baileys/Meta
-                    const isButton = ctx.message?.buttonsResponseMessage || 
-                                     ctx.message?.templateButtonReplyMessage || 
-                                     ctx.message?.interactiveResponseMessage ||
-                                     ctx.message?.listResponseMessage;
+                    // 1. Desenvolver el mensaje (Temporales, Vista Única, etc)
+                    const message = obtenerMensajeUnwrapped(ctx);
+                    if (message) {
+                        ctx.message = message;
+                    }
                     
-                    if (isButton) {
-                        console.log('🔘 Interacción de botón específica detectada');
-                        // Mapear el texto del botón al body para que el flujo pueda procesarlo
-                        if (ctx.message?.buttonsResponseMessage) {
-                            ctx.body = ctx.message.buttonsResponseMessage.selectedDisplayText || ctx.message.buttonsResponseMessage.selectedId;
-                        } else if (ctx.message?.templateButtonReplyMessage) {
-                            ctx.body = ctx.message.templateButtonReplyMessage.selectedDisplayText || ctx.message.templateButtonReplyMessage.selectedId;
-                        } else if (ctx.message?.listResponseMessage) {
-                            ctx.body = ctx.message.listResponseMessage.title || ctx.message.listResponseMessage.singleSelectReply?.selectedRowId;
-                        } else if (ctx.message?.interactiveResponseMessage) {
-                            try {
-                                const interactive = JSON.parse(ctx.message.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson);
-                                ctx.body = interactive.id;
-                            } catch (e) {
-                                ctx.body = 'buttonInteraction';
+                    // 2. Extraer texto base usando el nuevo extractor robusto
+                    const textoExtraido = obtenerTextoDelMensaje(message);
+
+                    if (!ctx.body || ctx.body === '' || ctx.body === '_event_media_' || ctx.body === '_event_document_' || ctx.body === '_event_voice_note_') {
+                        ctx.body = textoExtraido;
+                    }
+
+                    // Detección de tipos especiales (Botones, Listas, Flows, Ubicación, Anuncios, etc)
+                    const isLocation = message?.locationMessage || message?.liveLocationMessage;
+                    const isOrder = message?.orderMessage || message?.productMessage;
+                    const isAd = message?.extendedTextMessage?.contextInfo?.externalAdReply;
+                    const isButton = message?.buttonsResponseMessage || 
+                                     message?.templateButtonReplyMessage || 
+                                     message?.interactiveResponseMessage ||
+                                     message?.listResponseMessage;
+                    
+                    // Prioridad 1: Ubicación
+                    if (isLocation) {
+                        ctx.type = EVENTS.LOCATION;
+                        ctx.body = ctx.body || '_event_location_';
+                    } 
+                    // Prioridad 2: Órdenes de carrito/catálogo
+                    else if (isOrder) {
+                        ctx.type = EVENTS.ACTION;
+                        ctx.body = message?.orderMessage ? `Orden: ${message.orderMessage.orderId}` : 'Producto en catálogo';
+                    } 
+                    // Prioridad 3: Interacciones de botones/listas/flows
+                    else if (isButton) {
+                        // console.log('🔘 Interacción de botón detectada');
+                        if (message?.buttonsResponseMessage) {
+                            ctx.body = message.buttonsResponseMessage.selectedDisplayText || message.buttonsResponseMessage.selectedId;
+                        } else if (message?.templateButtonReplyMessage) {
+                            ctx.body = message.templateButtonReplyMessage.selectedDisplayText || message.templateButtonReplyMessage.selectedId;
+                        } else if (message?.listResponseMessage) {
+                            ctx.body = message.listResponseMessage.title || message.listResponseMessage.singleSelectReply?.selectedRowId;
+                        } else if (message?.interactiveResponseMessage) {
+                            const interactive = message.interactiveResponseMessage;
+                            if (interactive.nativeFlowResponseMessage) {
+                                try {
+                                    const params = JSON.parse(interactive.nativeFlowResponseMessage.paramsJson);
+                                    ctx.body = params.id || params.flow_token || 'flow_response';
+                                } catch (e) { ctx.body = 'flow_interaction'; }
+                            } else if (interactive.buttonReply) {
+                                ctx.body = interactive.buttonReply.title || interactive.buttonReply.id;
+                            } else if (interactive.listReply) {
+                                ctx.body = interactive.listReply.title || interactive.listReply.id;
                             }
                         }
-                        
-                        // Asignar el tipo ACTION para disparar welcomeFlowButton
                         ctx.type = EVENTS.ACTION;
-                        console.log(`Actualizado -> Type: ${ctx.type} | Body: ${ctx.body}`);
-                    } else if (ctx.type === 'desconocido' || !ctx.body) {
-                         // Log de ayuda para mensajes de plantilla de Meta no detectados
-                         console.log('⚠️ [Debug] Mensaje potencial de plantilla no detectado. Estructura ctx:', JSON.stringify(ctx).substring(0, 500));
+                    } 
+                    // Prioridad 4: Anuncios de Meta (Click-to-WhatsApp) y mensajes extendidos
+                    else if (isAd || message?.extendedTextMessage) {
+                        const extText = message?.extendedTextMessage;
+                        // Capturamos el texto si no está ya en el body
+                        if (!ctx.body || ctx.body === '') {
+                            ctx.body = extText?.text || '';
+                        }
+                        
+                        // Si es un anuncio, enriquecemos el body para que la IA tenga contexto
+                        if (isAd) {
+                            const adTitle = isAd.title || '';
+                            const adBody = isAd.body || '';
+                            // Agregamos contexto de anuncio de forma invisible para el usuario pero visible para el bot
+                            ctx.body = `${ctx.body} [Contexto Anuncio: ${adTitle} - ${adBody}]`.trim();
+                            // console.log(`📢 Detectado Anuncio de Meta: ${adTitle}`);
+                        }
+                    }
+                    // Fallback: Otros tipos (Contactos, etc)
+                    else if (ctx.type === 'desconocido' || !ctx.body) {
+                         if (message?.contactMessage || message?.contactsArrayMessage) {
+                             ctx.type = EVENTS.ACTION;
+                             ctx.body = 'Contacto Compartido';
+                         }
                     }
                 });
 
