@@ -77,7 +77,7 @@ export class ReconectionFlow {
                     break;
                 case 3:
                 default:
-                    msg = msjSeguimiento3
+                    msg = msjSeguimiento3;
                     timeout = 60000; // 1 minuto para el siguiente msj
                     break;
             }
@@ -143,15 +143,35 @@ export class ReconectionFlow {
                 if (this.state) delete this.state.reconectionFlow;
                 
                 // Usamos el recepcionista para refrescar el resumen
-                const resumen = await safeToAsk(ASSISTANT_MAP.asistente1, "GET_RESUMEN", this.state, this.ctx.from, errorReporter);
-                const data: GenericResumenData = extraerDatosResumen(resumen);
+                const assistantId = ASSISTANT_MAP?.asistente1 || process.env.ASSISTANT_1 || '';
+                const resumenRaw = await safeToAsk(assistantId, "GET_RESUMEN", this.state, this.ctx.from, errorReporter);
+                if (!resumenRaw) {
+                    console.error('[ReconectionFlow] No se pudo obtener resumen tras detección de usuario.');
+                    return;
+                }
+                const resumen = String(resumenRaw);
+                let data: GenericResumenData;
+                try {
+                    data = JSON.parse(resumen);
+                } catch (e) {
+                    data = extraerDatosResumen(resumen);
+                }
                 await this.onSuccess(data);
                 return;
             }
 
             // Si no respondió, intentar obtener el resumen nuevamente desde el recepcionista
-            const resumen = await safeToAsk(ASSISTANT_MAP.asistente1, "GET_RESUMEN", this.state, this.ctx.from, errorReporter);
-            const data: GenericResumenData = extraerDatosResumen(resumen);
+            const assistantId = ASSISTANT_MAP?.asistente1 || process.env.ASSISTANT_1 || '';
+            const resumenRaw = await safeToAsk(assistantId, "GET_RESUMEN", this.state, this.ctx.from, errorReporter);
+            if (!resumenRaw) continue; // Reintentar o esperar el siguiente ciclo
+
+            const resumen = String(resumenRaw);
+            let data: GenericResumenData;
+            try {
+                data = JSON.parse(resumen);
+            } catch (e) {
+                data = extraerDatosResumen(resumen);
+            }
             
             const tipo = data.tipo || "SI_RESUMEN";
             if (tipo === "SI_RESUMEN" || (data.nombre && data.nombre.length > 2)) {

@@ -14,14 +14,7 @@ import { BaileysProvider } from "builderbot-provider-sherpa";
 import { restoreSessionFromDb, startSessionSync, deleteSessionFromDb } from "./utils/sessionSync";
 import { httpInject } from "@builderbot-plugins/openai-assistants";
 import { typing } from "./utils/presence";
-import { idleFlow } from "./Flows/idleFlow";
-import { welcomeFlowTxt } from "./Flows/welcomeFlowTxt";
-import { welcomeFlowVoice } from "./Flows/welcomeFlowVoice";
-import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
-import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
-import { welcomeFlowButton } from "./Flows/welcomeFlowButton";
-import { locationFlow } from "./Flows/locationFlow";
-import { welcomeFlowVideo } from "./Flows/welcomeFlowVideo";
+// Eliminado: processUserMessageWeb. Usar lógica principal para ambos canales.
 import { AssistantResponseProcessor } from "./utils/AssistantResponseProcessor";
 import { safeToAsk, waitForActiveRuns } from "./utils/OpenAIHandler";
 import { updateMain } from "./addModule/updateMain";
@@ -140,6 +133,16 @@ export const ASSISTANT_MAP = {
     asistente4: ASSISTANT_4, // opcional
     asistente5: ASSISTANT_5, // opcional
 };
+
+// Importación de flows después de declarar ASSISTANT_MAP y errorReporter para evitar circular dependency
+import { idleFlow } from "./Flows/idleFlow";
+import { welcomeFlowTxt } from "./Flows/welcomeFlowTxt";
+import { welcomeFlowVoice } from "./Flows/welcomeFlowVoice";
+import { welcomeFlowImg } from "./Flows/welcomeFlowImg";
+import { welcomeFlowDoc } from "./Flows/welcomeFlowDoc";
+import { welcomeFlowButton } from "./Flows/welcomeFlowButton";
+import { locationFlow } from "./Flows/locationFlow";
+import { welcomeFlowVideo } from "./Flows/welcomeFlowVideo";
 
 /**
  * Analiza la respuesta del recepcionista para determinar el destino.
