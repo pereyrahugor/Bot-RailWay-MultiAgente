@@ -53,48 +53,62 @@ export class HistoryHandler {
     }
     
     /**
-     * Obtiene o crea un registro de chat
+     * Obtiene o crea un registro de chat con reintentos para evitar fallos de red/timeout
      */
     static async getOrCreateChat(chatId: string, type: 'whatsapp' | 'webchat', name: string | null = null): Promise<Chat | null> {
         if (!supabase) return null;
-        try {
-            const { data, error } = await supabase
-                .from('chats')
-                .select('*')
-                .eq('id', chatId)
-                .eq('project_id', PROJECT_ID)
-                .maybeSingle();
+        
+        let attempts = 0;
+        const maxAttempts = 2;
 
-            if (!data) {
-                const { data: newData, error: insertError } = await supabase
+        while (attempts < maxAttempts) {
+            attempts++;
+            try {
+                const { data, error } = await supabase
                     .from('chats')
-                    .insert({
-                        id: chatId,
-                        project_id: PROJECT_ID,
-                        type,
-                        name,
-                        bot_enabled: true,
-                        last_message_at: new Date().toISOString()
-                    })
-                    .select()
-                    .single();
-                
-                if (insertError) throw insertError;
-                return newData;
+                    .select('*')
+                    .eq('id', chatId)
+                    .eq('project_id', PROJECT_ID)
+                    .maybeSingle();
+
+                if (error) throw error;
+
+                if (!data) {
+                    const { data: newData, error: insertError } = await supabase
+                        .from('chats')
+                        .insert({
+                            id: chatId,
+                            project_id: PROJECT_ID,
+                            type,
+                            name: name || null,
+                            bot_enabled: true,
+                            last_message_at: new Date().toISOString()
+                        })
+                        .select()
+                        .single();
+                    
+                    if (insertError) throw insertError;
+                    return newData;
+                }
+
+                // Actualizar nombre si es null y ahora tenemos uno
+                if (name && !data.name) {
+                    await supabase.from('chats').update({ name }).eq('id', chatId).eq('project_id', PROJECT_ID);
+                }
+
+                return data;
+            } catch (err: any) {
+                const isNetworkError = err.message?.includes('fetch failed') || err.name === 'ConnectTimeoutError';
+                if (isNetworkError && attempts < maxAttempts) {
+                    console.warn(`[HistoryHandler] Reintentando getOrCreateChat (${attempts}/${maxAttempts}) por error de red...`);
+                    await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+                    continue;
+                }
+                console.error('[HistoryHandler] Error en getOrCreateChat:', err);
+                return null;
             }
-
-            if (error) throw error;
-
-            // Actualizar nombre si es null y ahora tenemos uno
-            if (name && !data.name) {
-                await supabase.from('chats').update({ name }).eq('id', chatId).eq('project_id', PROJECT_ID);
-            }
-
-            return data;
-        } catch (err) {
-            console.error('[HistoryHandler] Error en getOrCreateChat:', err);
-            return null;
         }
+        return null;
     }
 
     /**
@@ -104,7 +118,12 @@ export class HistoryHandler {
         if (!supabase) return;
         try {
             // Asegurar que el chat existe
-            await this.getOrCreateChat(chatId, (chatId.includes('@') || chatId.length > 20) ? 'whatsapp' : 'webchat', contactName);
+            const chat = await this.getOrCreateChat(chatId, (chatId.includes('@') || chatId.length > 20) ? 'whatsapp' : 'webchat', contactName);
+            
+            if (!chat) {
+                console.error(`[HistoryHandler] No se pudo guardar el mensaje porque el chat ${chatId} no existe ni pudo ser creado.`);
+                return;
+            }
 
             const { error } = await supabase
                 .from('messages')
@@ -119,12 +138,15 @@ export class HistoryHandler {
 
             if (error) throw error;
 
-            // Actualizar timestamp del último mensaje en el chat
-            await supabase
+            // Actualizar timestamp del último mensaje en el chat (sin esperar para no ralentizar el flujo principal)
+            supabase
                 .from('chats')
                 .update({ last_message_at: new Date().toISOString() })
                 .eq('id', chatId)
-                .eq('project_id', PROJECT_ID);
+                .eq('project_id', PROJECT_ID)
+                .then(({ error: updateErr }) => {
+                    if (updateErr) console.warn('[HistoryHandler] No se pudo actualizar last_message_at:', updateErr.message);
+                });
 
             // Emitir evento para WebSockets
             historyEvents.emit('new_message', { chatId, role, content, type });
