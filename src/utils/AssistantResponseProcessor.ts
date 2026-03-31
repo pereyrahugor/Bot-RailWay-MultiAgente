@@ -1,42 +1,22 @@
 // src/utils/AssistantResponseProcessor.ts
-// Ajustar fecha/hora a GMT-3 (hora argentina)
-function toArgentinaTime(fechaReservaStr: string): string {
-    const [fecha, hora] = fechaReservaStr.split(' ');
-    const [anio, mes, dia] = fecha.split('-').map(Number);
-    const [hh, min] = hora.split(':').map(Number);
-    const date = new Date(Date.UTC(anio, mes - 1, dia, hh, min));
-    date.setHours(date.getHours() - 3);
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    const hhh = String(date.getHours()).padStart(2, '0');
-    const mmm = String(date.getMinutes()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd} ${hhh}:${mmm}`;
-}
 import { executeDbQuery } from '../utils/dbHandler';
 import { JsonBlockFinder } from "../Api-Google/JsonBlockFinder";
 import { CalendarEvents } from "../Api-Google/calendarEvents";
-import fs from 'fs';
 import moment from 'moment';
 import OpenAI from "openai";
 import { downloadFileFromDrive } from "../utils/googleDriveHandler";
 import { waitForActiveRuns } from "./OpenAIHandler";
-//import { handleToolFunctionCall } from '../Api-BotAsistente/handleToolFunctionCall.js';
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
-// waitForActiveRuns movido a OpenAIHandler.ts
-
-// Mapa global para bloquear usuarios de WhatsApp durante operaciones API
-const userApiBlockMap = new Map();
-const API_BLOCK_TIMEOUT_MS = 1000; // 5 segundos
-
-function limpiarBloquesJSON(texto: string, finalDelivery: boolean = false): string {
+/**
+ * Limpia bloques técnicos y citas de OpenAI para entrega final al usuario.
+ */
+export function limpiarBloquesJSON(texto: string, finalDelivery: boolean = false): string {
     if (!texto) return "";
     
-    // 1. Si es para entrega final, removemos todo lo que esté entre corchetes técnicos
     if (finalDelivery) {
         let limpio = texto;
         limpio = limpio.replace(/\[DB_QUERY\s*:[\s\S]*?\]/gi, '');
@@ -50,42 +30,27 @@ function limpiarBloquesJSON(texto: string, finalDelivery: boolean = false): stri
         return limpio.trim();
     }
 
-    // Comportamiento original para preservación interna
+    // Preservación interna para procesamiento recursivo
     const specialBlocks: string[] = [];
     let textoConMarcadores = texto;
 
-    // Preservar [DB_QUERY: ...]
-    textoConMarcadores = textoConMarcadores.replace(/\[DB_QUERY\s*:[\s\S]*?\]/gi, (match) => {
-        const index = specialBlocks.length;
-        specialBlocks.push(match);
-        return `___SPECIAL_BLOCK_${index}___`;
+    const regexes = [
+        /\[DB_QUERY\s*:[\s\S]*?\]/gi,
+        /\[DB\s*:[\s\S]*?\]/gi,
+        /\[API\][\s\S]*?\[\/API\]/gi,
+        /\[PDF\s*:\s*[\s\S]*?\]/gi
+    ];
+
+    regexes.forEach(regex => {
+        textoConMarcadores = textoConMarcadores.replace(regex, (match) => {
+            const index = specialBlocks.length;
+            specialBlocks.push(match);
+            return `___SPECIAL_BLOCK_${index}___`;
+        });
     });
 
-    // Preservar [DB:T:"tabla", D:"dato"]
-    textoConMarcadores = textoConMarcadores.replace(/\[DB\s*:[\s\S]*?\]/gi, (match) => {
-        const index = specialBlocks.length;
-        specialBlocks.push(match);
-        return `___SPECIAL_BLOCK_${index}___`;
-    });
-
-    // Preservar [API]...[/API]
-    textoConMarcadores = textoConMarcadores.replace(/\[API\][\s\S]*?\[\/API\]/gi, (match) => {
-        const index = specialBlocks.length;
-        specialBlocks.push(match);
-        return `___SPECIAL_BLOCK_${index}___`;
-    });
-
-    // Preservar [PDF: ID]
-    textoConMarcadores = textoConMarcadores.replace(/\[PDF\s*:\s*([\s\S]*?)\]/gi, (match) => {
-        const index = specialBlocks.length;
-        specialBlocks.push(match);
-        return `___SPECIAL_BLOCK_${index}___`;
-    });
-
-    // Limpiar referencias de OpenAI tipo 【 archivo.pdf 】
     let limpio = textoConMarcadores.replace(/【.*?】/g, '');
 
-    // Restaurar bloques especiales
     limpio = limpio.replace(/___SPECIAL_BLOCK_(\d+)___/g, (match, index) => {
         return specialBlocks[parseInt(index)];
     });
@@ -93,13 +58,11 @@ function limpiarBloquesJSON(texto: string, finalDelivery: boolean = false): stri
     return limpio;
 }
 
-function esFechaFutura(fechaReservaStr: string): boolean {
-    const ahora = new Date();
-    const fechaReserva = new Date(fechaReservaStr.replace(" ", "T"));
-    return fechaReserva >= ahora;
-}
-
 export class AssistantResponseProcessor {
+    /**
+     * Punto de entrada principal para procesar respuestas del asistente.
+     * Soporta recursividad para manejar múltiples llamadas a API en cadena.
+     */
     static async analizarYProcesarRespuestaAsistente(
         response: any,
         ctx: any,
@@ -112,261 +75,176 @@ export class AssistantResponseProcessor {
         recursionDepth: number = 0
     ) {
         if (recursionDepth > 5) {
-            console.error('[AssistantResponseProcessor] Límite de recursión alcanzado (5). Abortando.');
+            console.error('[AssistantResponseProcessor] Límite de recursión alcanzado. Abortando.');
             return;
         }
 
-        // Log de mensaje entrante del asistente (antes de cualquier filtro)
-        if (ctx && ctx.type === 'webchat') {
-            // console.log('[Webchat Debug] Mensaje entrante del asistente:', response);
-        } else {
-            // if (ctx && ctx.from && userApiBlockMap.has(ctx.from)) {
-            //     console.log(`[API Block] Mensaje ignorado de usuario bloqueado: ${ctx.from}`);
-            //     return;
-            // }
-        }
-
-        let jsonData: any = null;
         const textResponse = typeof response === "string" ? response : String(response || "");
-        
-        // Obtener threadId de forma segura para usar en todo el proceso
-        let threadId = ctx && ctx.thread_id;
-        if (!threadId && state && typeof state.get === 'function') {
-            threadId = state.get('thread_id');
-        }
+        let threadId = ctx?.thread_id || (state?.get && typeof state.get === 'function' ? state.get('thread_id') : null);
 
-        // Log de mensaje saliente al usuario (antes de cualquier filtro)
-        if (ctx && ctx.type === 'webchat') {
-            console.log('[Webchat Debug] Mensaje saliente al usuario (sin filtrar):', textResponse);
-        } else {
-            console.log('[WhatsApp Debug] Mensaje saliente al usuario (sin filtrar):', textResponse);
-        }
+        console.log(`[AssistantResponseProcessor] Procesando respuesta (Recursion: ${recursionDepth})`);
 
-        // 0) Detectar y procesar DB QUERY [DB_QUERY: ...]
+        // 1. PROCESAR BLOQUES DE BASE DE DATOS [DB_QUERY: ...]
         const dbQueryRegex = /\[DB_QUERY\s*:\s*([\s\S]*?)\]/i;
         const dbMatch = textResponse.match(dbQueryRegex);
         if (dbMatch) {
             const sqlQuery = dbMatch[1].trim();
-            if (ctx && ctx.type === 'webchat') console.log(`[Webchat Debug] 🔄 Detectada solicitud de DB Query: ${sqlQuery}`);
-            else console.log(`[WhatsApp Debug] 🔄 Detectada solicitud de DB Query: ${sqlQuery}`);
+            console.log(`[AssistantResponseProcessor] 🔄 Ejecutando DB Query: ${sqlQuery.substring(0, 50)}...`);
 
-            // Ejecutar Query
             const queryResult = await executeDbQuery(sqlQuery);
-            console.log(`[AssistantResponseProcessor] 📄 Resultado DB:`, queryResult.substring(0, 100) + '...');
-
             
+            if (threadId) await waitForActiveRuns(threadId);
+            else await new Promise(r => setTimeout(r, 2000));
 
-            // Esperar a que el Run anterior haya finalizado realmente en OpenAI
-            if (threadId) {
-                await waitForActiveRuns(threadId);
-            } else {
-                await new Promise(resolve => setTimeout(resolve, 2000));
-            }
-
-            // Enviar resultado al asistente (NO al usuario)
-            const newResponse = await getAssistantResponse(
+            const nextResponse = await getAssistantResponse(
                 assistantId,
                 `[DB_RESULT] ${queryResult} [/DB_RESULT]`,
                 state,
                 undefined,
-                ctx.from, threadId );
-
-            // Recursión: procesar la nueva respuesta
-            await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                newResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId, recursionDepth + 1
+                ctx.from, 
+                threadId 
             );
-            return; // Terminar ejecución actual
+
+            return this.analizarYProcesarRespuestaAsistente(
+                nextResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId, recursionDepth + 1
+            );
         }
 
-        // 0.1) Detectar y procesar DB SEARCH [DB:T:"tabla", D:"dato"]
-        // Regex mejorado para ser más flexible con comillas y espacios
+        // 2. PROCESAR BÚSQUEDA EN BD [DB: {T:"tabla", D:"dato"}]
         const dbSearchRegex = /\[DB\s*:\s*\{?\s*["']?T["']?\s*[:"' \t]+(?<tabla>[^"' \t,]+)["']?\s*,\s*["']?D["']?\s*[:"' \t]+(?<dato>[^"']+)["']?\s*\}?\s*\]/i;
         const dbSearchMatch = textResponse.match(dbSearchRegex);
-
         if (dbSearchMatch && dbSearchMatch.groups) {
             const { tabla, dato } = dbSearchMatch.groups;
             const sqlQuery = `SELECT * FROM "${tabla}" WHERE "${tabla}"::text ~* '${dato}'`;
-            
-            if (ctx && ctx.type === 'webchat') console.log(`[Webchat Debug] 🔍 Detectada DB Search en ${tabla}: ${dato}`);
-            else console.log(`[WhatsApp Debug] 🔍 Detectada DB Search en ${tabla}: ${dato}`);
+            console.log(`[AssistantResponseProcessor] 🔍 DB Search en ${tabla}: ${dato}`);
 
-            // Ejecutar Query
             const queryResult = await executeDbQuery(sqlQuery);
-            console.log(`[AssistantResponseProcessor] 📄 Resultado DB Search:`, queryResult.substring(0, 100) + '...');
-
             
-
-            // Esperar a que el Run anterior haya finalizado realmente en OpenAI
-            if (threadId) {
-                await waitForActiveRuns(threadId);
-            } else {
-                await new Promise(resolve => setTimeout(resolve, 2000));
-            }
-
-            // Enviar resultado al asistente (NO al usuario)
-            const newResponse = await getAssistantResponse(
+            if (threadId) await waitForActiveRuns(threadId);
+            const nextResponse = await getAssistantResponse(
                 assistantId,
                 `[DB_RESULT] ${queryResult} [/DB_RESULT]`,
                 state,
                 undefined,
-                ctx.from, threadId );
-
-            // Recursión: procesar la nueva respuesta
-            await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                newResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId, recursionDepth + 1
+                ctx.from, 
+                threadId 
             );
-            return; // Terminar ejecución actual
+
+            return this.analizarYProcesarRespuestaAsistente(
+                nextResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId, recursionDepth + 1
+            );
         }
 
-        // 0.2) Detectar y procesar descarga de PDF [PDF: ID]
+        // 3. PROCESAR DESCARGA DE PDF [PDF: ID]
         const pdfRegex = /\[PDF\s*:\s*([\s\S]*?)\]/i;
         const pdfMatch = textResponse.match(pdfRegex);
         if (pdfMatch) {
             const fileId = pdfMatch[1].trim();
-            console.log(`[AssistantResponseProcessor] 📄 Detectada solicitud de PDF: ${fileId}`);
-            
             try {
                 const filePath = await downloadFileFromDrive(fileId);
-                console.log(`[AssistantResponseProcessor] 📤 Enviando PDF al usuario: ${filePath}`);
+                console.log(`[AssistantResponseProcessor] 📤 Enviando PDF: ${filePath}`);
                 
                 await flowDynamic([{
                     body: "Aquí tienes el documento solicitado:",
                     media: filePath
                 }]);
 
-                // Notificar al asistente que el PDF fue enviado correctamente
-                const newResponse = await getAssistantResponse(
+                const nextResponse = await getAssistantResponse(
                     assistantId,
-                    `[SISTEMA] PDF enviado con éxito id ${fileId}. ¿Deseas algo más?`,
+                    `[SISTEMA] PDF enviado con éxito id ${fileId}.`,
                     state,
                     undefined,
                     ctx.from,
                     threadId
                 );
 
-                await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                    newResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId, recursionDepth + 1
+                return this.analizarYProcesarRespuestaAsistente(
+                    nextResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId, recursionDepth + 1
                 );
-                return;
             } catch (err) {
-                console.error(`[AssistantResponseProcessor] ❌ Error al procesar PDF (${fileId}):`, err);
+                console.error(`[AssistantResponseProcessor] ❌ Error PDF (${fileId}):`, err);
                 await flowDynamic([{ body: "Hubo un error al intentar descargar el documento." }]);
                 return;
             }
         }
 
-        // 1) Extraer bloque [API] ... [/API]
+        // 4. PROCESAR BLOQUE [API] ... [/API] (Calendar y otros)
         const apiBlockRegex = /\[API\](.*?)\[\/API\]/is;
         const match = textResponse.match(apiBlockRegex);
         if (match) {
             const jsonStr = match[1].trim();
+            let jsonData: any = null;
             try {
                 jsonData = JSON.parse(jsonStr);
             } catch (e) {
-                jsonData = null;
+                // Fallback heurístico si el JSON está mal formado o fuera de [API]
+                jsonData = JsonBlockFinder.buscarBloquesJSONEnTexto(textResponse);
             }
-        }
 
-        // 2) Fallback heurístico (desactivado, solo [API])
-        if (!jsonData) {
-            jsonData = JsonBlockFinder.buscarBloquesJSONEnTexto(textResponse) || (typeof response === "object" ? JsonBlockFinder.buscarBloquesJSONProfundo(response) : null);
-        }
+            if (jsonData && jsonData.type) {
+                const tipo = jsonData.type.trim();
+                let apiResponse: any = null;
 
-        // 3) Procesar JSON si existe
-        if (jsonData && typeof jsonData.type === "string") {
-            let unblockUser = null;
-            if (ctx && ctx.type !== 'webchat' && ctx.from) {
-                userApiBlockMap.set(ctx.from, true);
-                const timeoutId = setTimeout(() => {
-                    userApiBlockMap.delete(ctx.from);
-                }, API_BLOCK_TIMEOUT_MS);
-                unblockUser = () => {
-                    clearTimeout(timeoutId);
-                    userApiBlockMap.delete(ctx.from);
-                };
-            }
-            
-            const tipo = jsonData.type.trim();
-            let apiResponse: any;
-
-            try {
-                if (tipo === "create_event") {
-                    const { fecha, hora, titulo, descripcion, invitados } = jsonData;
-                    apiResponse = await CalendarEvents.createEvent({ fecha, hora, titulo, descripcion, invitados });
-                } else if (tipo === "available_event") {
-                    const { fecha, hora } = jsonData;
-                    const start = `${fecha}T${hora}:00-03:00`;
-                    const startMoment = moment(start);
-                    const endMoment = startMoment.clone().add(1, 'hour');
-                    const end = endMoment.format('YYYY-MM-DDTHH:mm:ssZ');
-                    apiResponse = await CalendarEvents.checkAvailability(start, end);
-                } else if (tipo === "modify_event") {
-                    const { id, fecha, hora, titulo, descripcion } = jsonData;
-                    apiResponse = await CalendarEvents.updateEvent(id, { fecha, hora, titulo, descripcion });
-                } else if (tipo === "cancel_event") {
-                    const { id } = jsonData;
-                    apiResponse = await CalendarEvents.deleteEvent(id);
-                }
-
-                if (apiResponse) {
-                    let threadId = ctx && ctx.thread_id;
-                    if (!threadId && state && typeof state.get === 'function') {
-                        threadId = state.get('thread_id');
+                try {
+                    console.log(`[AssistantResponseProcessor] 🛠 Ejecutando API Action: ${tipo}`);
+                    
+                    if (tipo === "create_event") {
+                        const { fecha, hora, titulo, descripcion, invitados } = jsonData;
+                        apiResponse = await CalendarEvents.createEvent({ fecha, hora, titulo, descripcion, invitados });
+                    } else if (tipo === "available_event") {
+                        const { fecha, hora } = jsonData;
+                        const start = `${fecha}T${hora}:00-03:00`;
+                        const startMoment = moment(start);
+                        const endMoment = startMoment.clone().add(1, 'hour');
+                        apiResponse = await CalendarEvents.checkAvailability(start, endMoment.format('YYYY-MM-DDTHH:mm:ssZ'));
+                    } else if (tipo === "modify_event") {
+                        const { id, fecha, hora, titulo, descripcion } = jsonData;
+                        apiResponse = await CalendarEvents.updateEvent(id, { fecha, hora, titulo, descripcion });
+                    } else if (tipo === "cancel_event") {
+                        apiResponse = await CalendarEvents.deleteEvent(jsonData.id);
                     }
 
-                    if (threadId) {
-                        await waitForActiveRuns(threadId);
-                    } else {
-                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    if (apiResponse) {
+                        if (threadId) await waitForActiveRuns(threadId);
+                        const nextResponse = await getAssistantResponse(
+                            assistantId,
+                            JSON.stringify(apiResponse, null, 2),
+                            state,
+                            undefined,
+                            ctx.from,
+                            threadId
+                        );
+
+                        return this.analizarYProcesarRespuestaAsistente(
+                            nextResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId, recursionDepth + 1
+                        );
                     }
-
-                    const newResponse = await getAssistantResponse(
-                        assistantId,
-                        JSON.stringify(apiResponse, null, 2),
-                        state,
-                        undefined,
-                        ctx.from,
-                        threadId
-                    );
-
-                    await AssistantResponseProcessor.analizarYProcesarRespuestaAsistente(
-                        newResponse, ctx, flowDynamic, state, provider, gotoFlow, getAssistantResponse, assistantId, recursionDepth + 1
-                    );
-                    if (unblockUser) unblockUser();
-                    return;
+                } catch (err) {
+                    console.error('[AssistantResponseProcessor] ❌ Error en API action:', err);
                 }
-            } catch (err) {
-                console.error('[API Error]', err);
-                if (unblockUser) unblockUser();
             }
         }
 
-        // Si no hubo bloque JSON válido o fue procesado, enviar el texto limpio al usuario
+        // 5. ENTREGA FINAL AL USUARIO (Texto Limpio)
         const cleanTextResponse = limpiarBloquesJSON(textResponse, true).trim();
         
+        // Manejo especial de demora/reserva (opcional según lógica de negocio original)
         if (cleanTextResponse.includes('Voy a proceder a realizar la reserva.')) {
-            await new Promise(res => setTimeout(res, 30000));
-            let assistantApiResponse = await getAssistantResponse(assistantId, 'ok', state, undefined, ctx.from, threadId);
-            while (assistantApiResponse && /(ID:\s*\w+)/.test(assistantApiResponse)) {
-                await new Promise(res => setTimeout(res, 10000));
-                assistantApiResponse = await getAssistantResponse(assistantId, 'ok', state, undefined, ctx.from, threadId);
-            }
-            if (assistantApiResponse) {
-                try {
-                    await flowDynamic([{ body: limpiarBloquesJSON(String(assistantApiResponse)).trim() }]);
-                } catch (err) {
-                    console.error('[WhatsApp Debug] Error en flowDynamic:', err);
-                }
+            await new Promise(res => setTimeout(res, 3000)); // Delay para simular procesamiento
+            const waitMsg = await getAssistantResponse(assistantId, 'continuar', state, undefined, ctx.from, threadId);
+            if (waitMsg) {
+                await flowDynamic([{ body: limpiarBloquesJSON(String(waitMsg), true).trim() }]);
             }
         } else if (cleanTextResponse.length > 0) {
+            // Dividir por párrafos para un envío más natural en WhatsApp
             const chunks = cleanTextResponse.split(/\n\n+/);
             for (const chunk of chunks) {
                 if (chunk.trim().length > 0) {
                     try {
                         await flowDynamic([{ body: chunk.trim() }]);
-                        await new Promise(r => setTimeout(r, 600));
+                        await new Promise(r => setTimeout(r, 800)); // Pequeño delay entre burbujas
                     } catch (err) {
-                        console.error('[WhatsApp Debug] Error en flowDynamic:', err);
+                        console.error('[AssistantResponseProcessor] Error en flowDynamic:', err);
                     }
                 }
             }

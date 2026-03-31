@@ -1,5 +1,5 @@
 import { safeToAsk } from '../utils/OpenAIHandler';
-import { errorReporter, ASSISTANT_MAP, userAssignedAssistant } from "../app";
+import { errorReporter, aiManager } from "../app";
 import { extraerDatosResumen, GenericResumenData } from '../utils/extractJsonData';
 import { downloadFileFromDrive } from '../utils/googleDriveHandler';
 import { HistoryHandler } from '../utils/HistoryHandler';
@@ -143,7 +143,7 @@ export class ReconectionFlow {
                 if (this.state) delete this.state.reconectionFlow;
                 
                 // Usamos el recepcionista para refrescar el resumen
-                const assistantId = ASSISTANT_MAP?.asistente1 || process.env.ASSISTANT_1 || '';
+            const assistantId = aiManager.ASSISTANT_MAP?.asistente1 || process.env.ASSISTANT_1 || '';
                 const resumenRaw = await safeToAsk(assistantId, "GET_RESUMEN", this.state, this.ctx.from, errorReporter);
                 if (!resumenRaw) {
                     console.error('[ReconectionFlow] No se pudo obtener resumen tras detección de usuario.');
@@ -161,7 +161,7 @@ export class ReconectionFlow {
             }
 
             // Si no respondió, intentar obtener el resumen nuevamente desde el recepcionista
-            const assistantId = ASSISTANT_MAP?.asistente1 || process.env.ASSISTANT_1 || '';
+            const assistantId = aiManager.ASSISTANT_MAP?.asistente1 || process.env.ASSISTANT_1 || '';
             const resumenRaw = await safeToAsk(assistantId, "GET_RESUMEN", this.state, this.ctx.from, errorReporter);
             if (!resumenRaw) continue; // Reintentar o esperar el siguiente ciclo
 

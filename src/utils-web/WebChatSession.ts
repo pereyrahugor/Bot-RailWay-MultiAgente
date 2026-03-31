@@ -18,4 +18,15 @@ export class WebChatSession {
     this.history = [];
     this.thread_id = null;
   }
+
+  // Compatibilidad con AiManager state
+  get(key: string) {
+    if (key === 'thread_id') return this.thread_id;
+    if (key === 'history') return this.history;
+    return undefined;
+  }
+
+  async update(key: string, value: any) {
+    if (key === 'thread_id') this.thread_id = value;
+  }
 }

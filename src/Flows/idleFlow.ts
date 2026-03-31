@@ -1,12 +1,11 @@
 import { addKeyword, EVENTS } from '@builderbot/bot';
 import { safeToAsk } from '../utils/OpenAIHandler';
-import { errorReporter } from '../app';
+import { aiManager, errorReporter } from '../app';
 import { GenericResumenData, extraerDatosResumen } from '~/utils/extractJsonData';
 import { addToSheet } from '~/utils/googleSheetsResumen';
 import fs from 'fs';
 import path from 'path';
 import { ReconectionFlow } from './reconectionFlow';
-import { userAssignedAssistant, ASSISTANT_MAP, analizarDestinoRecepcionista } from '../app';
 
 //** Variables de entorno para el envio de msj de resumen a grupo de WS */
 const ID_GRUPO_RESUMEN = process.env.ID_GRUPO_WS ?? process.env.ID_GRUPO_RESUMEN ?? '';
@@ -74,7 +73,7 @@ const idleFlow = addKeyword(EVENTS.ACTION).addAction(
 
         try {
             // Obtener el asistente multiagente asignado
-            const asistenteEnUso = ASSISTANT_MAP[userAssignedAssistant.get(ctx.from) || 'asistente1'];
+            const asistenteEnUso = aiManager.getAssignedAssistantId(ctx.from);
             // Obtener el resumen del asistente de OpenAI usando safeToAsk
             const resumen = await safeToAsk(asistenteEnUso, "GET_RESUMEN", state, ctx.from, errorReporter) as string;
 
@@ -299,4 +298,4 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-export { idleFlow, userAssignedAssistant };
+export { idleFlow };

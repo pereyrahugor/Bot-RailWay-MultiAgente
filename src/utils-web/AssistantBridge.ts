@@ -1,5 +1,4 @@
-
-import express from 'express';
+import { historyEvents } from '../utils/HistoryHandler';
 import { Server } from 'socket.io';
 import http from 'http';
 import path from 'path';
@@ -20,11 +19,36 @@ export class AssistantBridge {
   constructor() {}
 
   // Inicializa el webchat en el servidor principal
-  public setupWebChat(app: any, server: http.Server) {
+  public setupWebChat(app: any, server: http.Server, processUserMessage: Function) {
     // Servir el archivo webchat.html en /webchat (Polka no tiene sendFile)
 
     this.io = new Server(server, {
       cors: { origin: "*" }
+    });
+
+    // Suscribirse a eventos globales de historial para notificar en tiempo real
+    historyEvents.on('new_message', (data) => {
+      this.io?.emit('new_message', data);
+    });
+
+    historyEvents.on('bot_toggled', (data) => {
+      this.io?.emit('bot_toggled', data);
+    });
+
+    historyEvents.on('tag_created', (data) => {
+      this.io?.emit('tag_created', data);
+    });
+
+    historyEvents.on('tag_deleted', (data) => {
+      this.io?.emit('tag_deleted', data);
+    });
+
+    historyEvents.on('chat_tag_added', (data) => {
+      this.io?.emit('chat_tag_added', data);
+    });
+
+    historyEvents.on('chat_tag_removed', (data) => {
+      this.io?.emit('chat_tag_removed', data);
     });
 
     this.io.on('connection', (socket) => {
@@ -36,46 +60,42 @@ export class AssistantBridge {
           // Usar lógica principal del bot para webchat
           // Centralizar historial y estado igual que WhatsApp
           const ip = socket.handshake.address || '';
-          if (!global.webchatHistories) global.webchatHistories = {};
+          if (!(global as any).webchatHistories) (global as any).webchatHistories = {};
           const historyKey = `webchat_${ip}`;
-          if (!global.webchatHistories[historyKey]) global.webchatHistories[historyKey] = { history: [], thread_id: null };
-          const _store = global.webchatHistories[historyKey];
+          if (!(global as any).webchatHistories[historyKey]) (global as any).webchatHistories[historyKey] = { history: [], thread_id: null };
+          const _store = (global as any).webchatHistories[historyKey];
           const _history = _store.history;
+          
+          // Crear un wrapper de estado compatible con AiManager
           const state = {
-            get: function (key) {
+            get: function (key: string) {
               if (key === 'history') return _history;
               if (key === 'thread_id') return _store.thread_id;
               return undefined;
             },
-            setThreadId: function (id) {
+            setThreadId: function (id: string) {
               _store.thread_id = id;
             },
-            update: async function (msg, role = 'user') {
-              if (_history.length > 0) {
-                const last = _history[_history.length - 1];
-                if (last.role === role && last.content === msg) return;
-              }
-              _history.push({ role, content: msg });
-              if (_history.length >= 6) {
-                const last3 = _history.slice(-3);
-                if (last3.every(h => h.role === 'user' && h.content === msg)) {
-                  _history.length = 0;
-                  _store.thread_id = null;
-                }
-              }
+            update: async function (key: string, value: any) {
+              if (key === 'thread_id') _store.thread_id = value;
             },
-            clear: async function () { _history.length = 0; _store.thread_id = null; }
+            clear: async function () { 
+              _history.length = 0; 
+              _store.thread_id = null; 
+            }
           };
+
           const provider = undefined;
-          const gotoFlow = () => {};
+          const gotoFlow = (flow: any) => { console.log(`[Webchat] GotoFlow suggested: ${flow?.name}`); };
           let replyText = '';
-          const flowDynamic = async (arr) => {
+          const flowDynamic = async (arr: any) => {
             if (Array.isArray(arr)) {
               replyText = arr.map(a => a.body).join('\n');
             } else if (typeof arr === 'string') {
               replyText = arr;
             }
           };
+
           if (msg.trim().toLowerCase() === "#reset" || msg.trim().toLowerCase() === "#cerrar") {
             await state.clear();
             replyText = "🔄 El chat ha sido reiniciado. Puedes comenzar una nueva conversación.";
@@ -86,13 +106,14 @@ export class AssistantBridge {
               type: 'webchat', 
               thread_id: state.get('thread_id') 
             };
-            const appModule = await import('../app');
-            await appModule.processUserMessage(ctx, { flowDynamic, state, provider, gotoFlow });
+            
+            // Llamar a la función procesadora inyectada
+            await processUserMessage(ctx, { flowDynamic, state, provider, gotoFlow });
+            
             if (ctx.lastThreadId) {
               state.setThreadId(ctx.lastThreadId);
             }
           }
-          socket.emit('reply', replyText);
           socket.emit('reply', replyText);
           this.saveMessage(msg, 'frontend');
           this.saveMessage(replyText, 'assistant');

@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { toAsk } from '@builderbot-plugins/openai-assistants';
 import { HistoryHandler } from './HistoryHandler';
 
-const openai = new OpenAI({
+export const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
