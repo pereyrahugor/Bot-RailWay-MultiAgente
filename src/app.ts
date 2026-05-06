@@ -110,15 +110,17 @@ const main = async () => {
         await aiManager.processUserMessage(item.ctx, item);
     });
 
-    // 7. Eventos del Proveedor (QR y Mensajes Raw)
-    adapterProvider.on('require_action', async (payload: any) => {
+    const handleQR = async (payload: any) => {
         const qrString = typeof payload === 'string' ? payload : (payload?.qr || payload?.code);
         if (qrString) {
             const qrPath = path.join(process.cwd(), 'bot.qr.png');
             await QRCode.toFile(qrPath, qrString, { scale: 4 });
             console.log(`✅ QR generado: ${qrPath}`);
         }
-    });
+    };
+
+    adapterProvider.on('require_action', handleQR);
+    adapterProvider.on('qr', handleQR);
 
     adapterProvider.on('message', (ctx: any) => {
         const message = obtenerMensajeUnwrapped(ctx);
@@ -184,6 +186,20 @@ const main = async () => {
     app.post("/api/restart-bot", async (req, res) => {
         const result = await RailwayApi.restartActiveDeployment();
         res.json(result);
+    });
+
+    // Servir imagen del QR
+    app.get("/qr.png", (req, res) => {
+        const qrPath = path.join(process.cwd(), 'bot.qr.png');
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        if (fs.existsSync(qrPath)) {
+            res.setHeader('Content-Type', 'image/png');
+            fs.createReadStream(qrPath).pipe(res);
+        } else {
+            res.status(404).send('QR not found');
+        }
     });
 
 
