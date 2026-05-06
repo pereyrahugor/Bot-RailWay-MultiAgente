@@ -246,6 +246,7 @@ const main = async () => {
     serveHtml("/login", "login.html");
     serveHtml("/variables", "variables.html");
     serveHtml("/webchat", "webchat.html");
+    serveHtml("/webreset", "webreset.html");
 
     // 10. Iniciar Sincronización y Sockets
     startSessionSync();

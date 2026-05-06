@@ -1,5 +1,5 @@
 # Build Stage
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 
 WORKDIR /app
 
@@ -26,7 +26,7 @@ COPY README.md ./
 RUN npm run build
 
 # Stage de Producción
-FROM node:20-slim AS deploy
+FROM node:22-slim AS deploy
 
 # Instalar utilidades necesarias en la imagen final
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -66,4 +66,4 @@ USER nodejs
 ENV PORT=8080
 EXPOSE 8080
 
-CMD ["npm", "start"]
+CMD ["npm", "start"]
