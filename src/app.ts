@@ -83,7 +83,7 @@ const main = async () => {
 
     // 3. Inicializar Proveedor (Baileys via Sherpa)
     adapterProvider = createProvider(BaileysProvider, {
-        version: [2, 3000, 1030817285],
+        version: [2, 3000, 1038711718],
         groupsIgnore: false,
         readStatus: false,
         disableHttpServer: true, // Nosotros manejaremos el servidor con Polka
